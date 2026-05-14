@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="B.I.Y.A.H.E. — Metro Manila transit navigation. Made by the Commuters. For the Commuters. Find the fastest, cheapest routes across LRT, MRT, EDSA Carousel, jeepneys, and buses.">
+  <meta name="theme-color" content="#0a0e1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>B.I.Y.A.H.E. — Hassle-free Metro Manila Navigation</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link href="https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.css" rel="stylesheet" />
+</head>
+<body>
+  <!-- Map Container Layer (MapLibre) -->
+  <div id="map-container"></div>
+  
+  <div id="app" style="position: relative; z-index: 1; pointer-events: none;"></div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.0.0/dist/maplibre-gl.js"></script>
+  <script src="scripts/transit-graph.js"></script>
+  <script src="scripts/fare-calculator.js"></script>
+  <script src="scripts/eta-engine.js"></script>
+  <script src="scripts/mcraptor.js"></script>
+  <script src="scripts/map-engine.js"></script>
+  <script src="scripts/app.js"></script>
+</body>
+</html>

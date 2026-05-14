@@ -1,0 +1,50 @@
+# Node.js
+node_modules/
+.next/
+out/
+dist/
+build/
+*.log
+.env*
+!.env.example
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+build/
+
+# Android
+android/app/build/
+android/local.properties
+android/*.keystore
+android/*.jks
+
+# C++/CMake
+core/*.dll
+core/*.exe
+core/*.o
+core/*.obj
+core/build/
+native/build/
+
+# Firebase
+.firebase/
+firebasedebuglog.txt
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.tmp
+*.temp
+google-cloud-sdk-installer.exe
+google-services.json
+local.properties
