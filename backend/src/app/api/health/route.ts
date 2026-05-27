@@ -4,3 +4,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json({ status: "active", message: "Backend is awake." }, { status: 200 });
 }
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204 });
+}

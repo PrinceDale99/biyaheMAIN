@@ -9,6 +9,9 @@ import 'package:biyahe_app/services/auth_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart';
+
+final shorebirdCodePush = ShorebirdCodePush();
 
 // PRODUCTION READY: Centralized Theme & Constants
 class BiyaheTheme {
@@ -22,6 +25,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   MapboxOptions.setAccessToken(const String.fromEnvironment("MAPBOX_ACCESS_TOKEN", defaultValue: "YOUR_MAPBOX_ACCESS_TOKEN_HERE"));
+
+  // Check for updates over-the-air
+  shorebirdCodePush.checkForUpdate().then((status) {
+    if (status == UpdateStatus.restartRequired) {
+      debugPrint("Biyahe: New update downloaded. It will be applied on next restart.");
+    }
+  });
+
   runApp(
     MultiProvider(
       providers: [
