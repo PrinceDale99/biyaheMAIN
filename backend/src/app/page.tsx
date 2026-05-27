@@ -265,6 +265,69 @@ export default function Home() {
       });
       map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
 
+      // Add Pedestrian Infrastructure Layers
+      // Sidewalks & Pedestrian Lanes
+      map.addLayer({
+        'id': 'pedestrian-sidewalks',
+        'type': 'line',
+        'source': 'composite',
+        'source-layer': 'road',
+        'filter': ['in', ['get', 'class'], ['literal', ['sidewalk', 'pedestrian', 'footway', 'path']]],
+        'paint': {
+          'line-color': '#2dd4bf',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1, 18, 3],
+          'line-opacity': 0.4
+        }
+      });
+
+      // Crossings
+      map.addLayer({
+        'id': 'pedestrian-crossings',
+        'type': 'line',
+        'source': 'composite',
+        'source-layer': 'road',
+        'filter': ['==', ['get', 'class'], 'crossing'],
+        'paint': {
+          'line-color': '#2dd4bf',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 6],
+          'line-dasharray': [1, 1],
+          'line-opacity': 0.8
+        }
+      });
+
+      // Stairs
+      map.addLayer({
+        'id': 'pedestrian-stairs',
+        'type': 'line',
+        'source': 'composite',
+        'source-layer': 'road',
+        'filter': ['==', ['get', 'class'], 'stair'],
+        'paint': {
+          'line-color': '#f43f5e', // Rose for visibility
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 5],
+          'line-dasharray': [0.5, 0.5],
+          'line-opacity': 0.9
+        }
+      });
+
+      // Bridges & Overpasses
+      map.addLayer({
+        'id': 'pedestrian-bridges',
+        'type': 'line',
+        'source': 'composite',
+        'source-layer': 'road',
+        'filter': ['all', 
+          ['==', ['get', 'structure'], 'bridge'],
+          ['in', ['get', 'class'], ['literal', ['pedestrian', 'footway', 'path', 'sidewalk']]]
+        ],
+        'paint': {
+          'line-color': '#fbbf24', // Amber for bridges
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 6],
+          'line-opacity': 0.9,
+          'line-blur': 1
+        }
+      });
+
       // Add 3D buildings
       map.addLayer({
         'id': '3d-buildings',

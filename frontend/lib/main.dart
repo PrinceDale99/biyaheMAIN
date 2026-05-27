@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:biyahe_app/screens/navigation_screen.dart';
+import 'package:biyahe_app/screens/search_screen.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 // PRODUCTION READY: Centralized Theme & Constants
 class BiyaheTheme {
@@ -10,7 +13,10 @@ class BiyaheTheme {
   static const Color accent = Color(0xFF2DD4BF);  // Teal 400
 }
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  MapboxOptions.setAccessToken(const String.fromEnvironment("MAPBOX_ACCESS_TOKEN", defaultValue: "YOUR_MAPBOX_ACCESS_TOKEN_HERE"));
   runApp(const BiyaheApp());
 }
 
@@ -41,17 +47,19 @@ class BiyaheHomeScreen extends StatefulWidget {
   State<BiyaheHomeScreen> createState() => _BiyaheHomeScreenState();
 }
 
-class _BiyaheHomeScreenState extends State<BiheHomeScreen> {
-  // Simulation of OpenStreetMap (OSM) focused on Metro Manila
-  final String osmPHUrl = "https://www.openstreetmap.org/export/embed.html?bbox=120.9,14.5,121.1,14.7";
+class _BiyaheHomeScreenState extends State<BiyaheHomeScreen> {
+  MapboxMap? mapboxMap;
+  PointAnnotationManager? pointAnnotationManager;
+  Point? userLocation;
+  String _destinationName = 'Where to, Juan?...';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. OSM MAP LAYER (Production Ready Simulation)
-          _buildOSMLayer(),
+          // 1. MAPBOX LAYER
+          _buildMapboxLayer(),
 
           // 2. SEARCH BAR & PROFILE (Glassmorphic)
           Positioned(
@@ -76,55 +84,97 @@ class _BiyaheHomeScreenState extends State<BiheHomeScreen> {
     );
   }
 
-  Widget _buildOSMLayer() {
-    return Container(
-      color: BiyaheTheme.bg,
-      child: Center(
-        child: Opacity(
-          opacity: 0.4,
-          child: Image.network(
-            'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1000&q=80',
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (context, error, stackTrace) => const Icon(Icons.map, size: 100, color: Colors.white10),
-          ),
-        ),
-      ),
+  Widget _buildMapboxLayer() {
+    return MapWidget(
+      key: const ValueKey("mapWidget"),
+      styleUri: "mapbox://styles/mapbox/dark-v11",
+      onMapCreated: _onMapCreated,
     );
   }
 
+  void _onMapCreated(MapboxMap mapboxMap) async {
+    this.mapboxMap = mapboxMap;
+    // Enable 3D terrain and building extrusions
+    mapboxMap.setTerrain(Terrain(sourceId: "mapbox-dem", exaggeration: 1.5));
+    
+    mapboxMap.location.updateSettings(LocationComponentSettings(
+      enabled: true,
+      pulsingEnabled: true,
+      puckBearingEnabled: true,
+    ));
+    
+    // Set initial camera
+    mapboxMap.setCamera(CameraOptions(
+      center: Point(coordinates: Position(120.9842, 14.5995)),
+      zoom: 14.0,
+      pitch: 60.0,
+    ));
+
+    pointAnnotationManager = await mapboxMap.annotations.createPointAnnotationManager();
+  }
+
   Widget _buildHeader() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.location_on, color: BiyaheTheme.primary, size: 20),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Where to, Juan?...',
-                  style: TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.w500),
+    return GestureDetector(
+      onTap: () async {
+        final result = await Navigator.of(context).push(
+          MaterialPageRoute(builder: (context) => const SearchScreen()),
+        );
+        if (result != null && result is Map<String, dynamic>) {
+          setState(() {
+            _destinationName = result['description'] ?? 'Destination';
+          });
+          if (mapboxMap != null && pointAnnotationManager != null && result['lat'] != null && result['lng'] != null) {
+            final targetPoint = Point(coordinates: Position(result['lng'], result['lat']));
+            mapboxMap?.flyTo(
+              CameraOptions(
+                center: targetPoint,
+                zoom: 16.0,
+                pitch: 60.0,
+              ),
+              MapAnimationOptions(duration: 2000),
+            );
+            
+            pointAnnotationManager?.deleteAll();
+            // In a real app we'd load an image from assets or network for the icon.
+            // Using a simple red circle workaround for now or basic PointAnnotationOptions.
+            pointAnnotationManager?.create(PointAnnotationOptions(
+              geometry: targetPoint,
+              // image: ... 
+            ));
+          }
+        }
+      },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.location_on, color: BiyaheTheme.primary, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _destinationName,
+                    style: const TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.w500),
+                  ),
                 ),
-              ),
-              const VerticalDivider(color: Colors.white10, width: 24),
-              const Icon(Icons.mic, color: Colors.white38, size: 20),
-              const SizedBox(width: 12),
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: BiyaheTheme.primary.withOpacity(0.2),
-                backgroundImage: const NetworkImage('https://i.pravatar.cc/150?u=juan'),
-              ),
-            ],
+                const VerticalDivider(color: Colors.white10, width: 24),
+                const Icon(Icons.mic, color: Colors.white38, size: 20),
+                const SizedBox(width: 12),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: BiyaheTheme.primary.withOpacity(0.2),
+                  backgroundImage: const NetworkImage('https://i.pravatar.cc/150?u=juan'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -259,16 +309,3 @@ class _BiyaheHomeScreenState extends State<BiheHomeScreen> {
   }
 }
 
-class BiheHomeScreen extends StatefulWidget {
-  const BiheHomeScreen({super.key});
-
-  @override
-  State<BiheHomeScreen> createState() => _BiheHomeScreenState();
-}
-
-class _BiheHomeScreenState extends State<BiheHomeScreen> {
-  @override
-  Widget build(BuildContext context) {
-    return const BiyaheHomeScreen();
-  }
-}

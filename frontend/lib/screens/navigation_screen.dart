@@ -35,7 +35,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       voiceInstructionsEnabled: true,
       bannerInstructionsEnabled: true,
       allowsUTurnAtWayPoints: true,
-      mode: MapBoxNavigationMode.drivingWithTraffic, // Defaulting to traffic-aware for best ETA
+      mode: MapBoxNavigationMode.walking, // Switched to walking to include footbridges, stairs, and sidewalks
       units: MapBoxUnits.metric,
       simulateRoute: false,
       language: "en",
