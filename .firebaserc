@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "default": "biyahe-ecf89"
+  },
   "targets": {},
   "etags": {}
 }

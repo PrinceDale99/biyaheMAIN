@@ -21,6 +21,11 @@ RUN npm ci
 
 # Copy backend source
 COPY backend/ ./
+
+# Ensure core directory exists and copy the built C++ shared library
+RUN mkdir -p /app/core
+COPY --from=cpp-builder /app/core/build/lib/biyahe_core.so /app/core/biyahe_core.so
+
 RUN npm run build
 
 # Stage 3: Production Runner
