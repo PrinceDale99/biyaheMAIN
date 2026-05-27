@@ -1,4 +1,12 @@
 {
+  "hosting": {
+    "source": "backend",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  },
   "auth": {
     "providers": {
       "emailPassword": true,

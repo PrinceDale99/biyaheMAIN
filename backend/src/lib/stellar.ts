@@ -8,7 +8,8 @@ import {
   nativeToScVal, 
   scValToNative, 
   Address,
-  xdr
+  xdr,
+  Account
 } from '@stellar/stellar-sdk';
 
 /**
@@ -78,22 +79,23 @@ export class StellarRewards {
         throw new Error(`Simulation failed: ${simulation.error}`);
       }
 
-      const assembledTx = rpc.assembleTransaction(tx, simulation);
-      assembledTx.sign(adminKeypair);
+      const assembledTxBuilder = rpc.assembleTransaction(tx, simulation);
+      const builtTx = assembledTxBuilder.build();
+      builtTx.sign(adminKeypair);
 
-      const response = await server.sendTransaction(assembledTx);
+      const response = await server.sendTransaction(builtTx);
       
       if (response.status === 'ERROR') {
         throw new Error(`Transaction failed: ${JSON.stringify(response)}`);
       }
 
       // Wait for ledger inclusion
-      let status = response.status;
+      let status: string = response.status;
       let txResponse = response;
       while (status === 'PENDING') {
         await new Promise(r => setTimeout(r, 2000));
         const res = await server.getTransaction(response.hash);
-        status = res.status;
+        status = res.status as string;
         txResponse = res as any;
       }
 
@@ -114,7 +116,7 @@ export class StellarRewards {
   static async getBalance(userAddress: string): Promise<bigint> {
     try {
       const tx = new TransactionBuilder(
-        new rpc.Account(userAddress, '0'),
+        new Account(userAddress, '0'),
         {
           fee: '1000',
           networkPassphrase: NETWORK_PASSPHRASE,
