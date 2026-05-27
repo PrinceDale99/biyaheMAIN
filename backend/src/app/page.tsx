@@ -635,10 +635,10 @@ export default function Home() {
       result.path.forEach((p, idx) => {
         if (p.edge?.type === 'walk') {
           let action = "Walk";
-          if (p.node.type === "stairs") action = "Take stairs";
-          if (p.node.type === "footbridge") action = "Cross footbridge";
-          if (p.node.type === "overpass") action = "Use overpass";
-          if (p.node.type === "pedestrian_lane") action = "Use pedestrian lane";
+          if ((p.node.type as string) === "stairs") action = "Take stairs";
+          if ((p.node.type as string) === "footbridge") action = "Cross footbridge";
+          if ((p.node.type as string) === "overpass") action = "Use overpass";
+          if ((p.node.type as string) === "pedestrian_lane") action = "Use pedestrian lane";
 
           if (idx === 0) pathInstructions.push(`${action} to ${p.node.name} (${Math.round(p.edge.distance)}m)`);
           else if (currentTransitRoute) {
