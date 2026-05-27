@@ -9,7 +9,8 @@ import { BottomNav } from '@/components/layout/BottomNav';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { TacticalButton } from '@/components/ui/TacticalButton';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { isConnected, getPublicKey } from "@stellar/freighter-api";
+import freighterApi from "@stellar/freighter-api";
+const { isConnected, getAddress } = freighterApi;
 import albedo from '@albedo-link/intent';
 
 interface Receipt {
@@ -72,10 +73,12 @@ export default function RewardsPage() {
         alert("Freighter is not installed or enabled.");
         return;
       }
-      const publicKey = await getPublicKey();
-      setConnectedAddress(publicKey);
-      setWalletType('Freighter');
-      setIsWalletModalOpen(false);
+      const { address } = await getAddress();
+      if (address) {
+        setConnectedAddress(address);
+        setWalletType('Freighter');
+        setIsWalletModalOpen(false);
+      }
     } catch (error) {
       console.error("Freighter error:", error);
     }

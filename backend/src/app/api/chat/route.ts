@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, Tool, GenerateContentRequest } from '@google/generative-ai';
+import { GoogleGenerativeAI, Tool, SchemaType } from '@google/generative-ai';
 import { CoreBridge } from '@/lib/core-bridge';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -14,11 +14,11 @@ const tools: Tool[] = [
         name: 'query_route',
         description: 'Queries the transit engine for optimal routes between two stations.',
         parameters: {
-          type: 'object',
+          type: SchemaType.OBJECT,
           properties: {
-            origin: { type: 'string', description: 'The ID of the origin station.' },
-            destination: { type: 'string', description: 'The ID of the destination station.' },
-            departureTime: { type: 'number', description: 'Departure time in seconds from midnight.' }
+            origin: { type: SchemaType.STRING, description: 'The ID of the origin station.' },
+            destination: { type: SchemaType.STRING, description: 'The ID of the destination station.' },
+            departureTime: { type: SchemaType.NUMBER, description: 'Departure time in seconds from midnight.' }
           },
           required: ['origin', 'destination', 'departureTime']
         }
@@ -27,7 +27,7 @@ const tools: Tool[] = [
         name: 'get_stations',
         description: 'Returns a list of all available transit stations.',
         parameters: {
-          type: 'object',
+          type: SchemaType.OBJECT,
           properties: {}
         }
       }

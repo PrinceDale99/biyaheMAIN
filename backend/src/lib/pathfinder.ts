@@ -236,7 +236,7 @@ export class Pathfinder {
     if (previous[end] === null) return null;
 
     while (curr !== null) {
-      const prevInfo = previous[curr];
+      const prevInfo: { nodeId: string; edge?: PathEdge } | null = previous[curr];
       path.unshift({ node: nodes.get(curr)!, edge: prevInfo?.edge });
       curr = prevInfo ? prevInfo.nodeId : null;
     }
