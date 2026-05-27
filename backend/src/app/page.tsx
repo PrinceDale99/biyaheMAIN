@@ -136,6 +136,7 @@ export default function Home() {
     });
   }, []);
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {

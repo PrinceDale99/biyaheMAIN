@@ -1,16 +1,22 @@
 {
   "hosting": {
-    "public": "frontend/build/web",
+    "public": ".",
     "ignore": [
       "firebase.json",
       "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
+      "**/node_modules/**",
+      "backend/**",
+      "core/**",
+      "frontend/**",
+      "Soroban/**",
+      "scratch/**",
+      "Dockerfile",
+      "README.md",
+      "DELIVERABLES.md",
+      "SYSTEM_FORMULAS.md",
+      ".firebase/**",
+      ".git/**",
+      "firebase-debug.log"
     ]
   },
   "auth": {

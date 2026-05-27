@@ -5,14 +5,18 @@ import os from 'os';
 
 // Define the DLL path based on OS
 const ext = os.platform() === 'win32' ? 'dll' : 'so';
-const dllPath = path.resolve(process.cwd(), `../core/biyahe_core.${ext}`);
+// Look for it in the same directory first (for deployment), then in the sibling core directory (for local dev)
+let dllPath = path.resolve(process.cwd(), `biyahe_core.${ext}`);
+if (!require('fs').existsSync(dllPath)) {
+  dllPath = path.resolve(process.cwd(), `../core/biyahe_core.${ext}`);
+}
 const finalDllPath = dllPath;
 
 // Load the library
 const lib = koffi.load(finalDllPath);
 
-// Define types
-const McRAPTOR_Ptr = koffi.pointer('McRAPTOR', koffi.opaque());
+// Define types - use anonymous pointers to avoid duplicate type name errors in Next.js
+const McRAPTOR_Ptr = koffi.pointer(koffi.opaque());
 
 // Define functions
 const create_engine = lib.func('create_engine', McRAPTOR_Ptr, []);

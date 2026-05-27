@@ -74,6 +74,7 @@ export default function AdminPage() {
   };
 
   const fetchTreasury = async () => {
+    if (!db) return;
     try {
       const snap = await getDoc(doc(db, "system", "treasury"));
       if (snap.exists()) {
@@ -90,6 +91,7 @@ export default function AdminPage() {
   };
 
   const fetchRoutes = async () => {
+    if (!db) return;
     try {
       const q = query(collection(db, "transport_info"), orderBy("createdAt", "desc"));
       const querySnapshot = await getDocs(q);
@@ -100,6 +102,7 @@ export default function AdminPage() {
   };
 
   const fetchUsers = async () => {
+    if (!db) return;
     try {
       const querySnapshot = await getDocs(collection(db, "users"));
       const usersData: UserProfile[] = [];
@@ -109,7 +112,7 @@ export default function AdminPage() {
   };
 
   const handleDelete = async (routeId: string) => {
-    if (!window.confirm("WARNING: Purge this record from the neural grid?")) return;
+    if (!window.confirm("WARNING: Purge this record from the neural grid?") || !db) return;
     setIsDeleting(routeId);
     try {
       await deleteDoc(doc(db, "transport_info", routeId));
@@ -119,6 +122,7 @@ export default function AdminPage() {
   };
 
   const handleUpdateReputation = async (userId: string) => {
+    if (!db) return;
     const repVal = parseFloat(newReputation[userId]);
     const pointVal = parseInt(newPoints[userId]);
     if (isNaN(repVal) && isNaN(pointVal)) return;
@@ -136,6 +140,7 @@ export default function AdminPage() {
   };
 
   const handleAddFunds = async () => {
+    if (!db) return;
     const amount = parseInt(addFundsAmount);
     if (isNaN(amount) || amount <= 0) return setFundMessage({ text: "Enter valid amount.", type: "error" });
     setFundingUser(true);
