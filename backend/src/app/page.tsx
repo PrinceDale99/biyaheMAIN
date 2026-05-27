@@ -78,6 +78,12 @@ export default function Home() {
   const [isNavigating, setIsNavigating] = useState(false);
   const [routingPreference, setRoutingPreference] = useState<RoutingPreference>('recommended');
   const [currentHeading, setCurrentHeading] = useState(0);
+  const [showLegend, setShowLegend] = useState(false);
+  
+  // Backend loading states
+  const [backendStatus, setBackendStatus] = useState<"checking" | "active" | "failed">("checking");
+  const [backendCheckMessage, setBackendCheckMessage] = useState("Initializing tactical grid...");
+
   const searchMarker = useRef<mapboxgl.Marker | null>(null);
 
   const speak = (text: string) => {
@@ -95,6 +101,35 @@ export default function Home() {
       speak(`Starting navigation. ${cleanText}`);
     }
   }, [isNavigating, instructions]);
+
+  useEffect(() => {
+    let attempts = 0;
+    const maxAttempts = 36; // 3 mins total (5s * 36)
+    
+    const checkBackend = async () => {
+      try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        const res = await fetch(`${backendUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(4500) });
+        if (res.ok) {
+          setBackendStatus("active");
+          return;
+        }
+      } catch (e) {
+        // Silently wait for backend to wake up
+      }
+      
+      attempts++;
+      if (attempts >= maxAttempts) {
+        setBackendStatus("failed");
+        setBackendCheckMessage("Backend cannot be initialized. Neural link severed.");
+      } else {
+        setBackendCheckMessage(`Establishing uplink... (Attempt ${attempts}/${maxAttempts})`);
+        setTimeout(checkBackend, 5000);
+      }
+    };
+    
+    checkBackend();
+  }, []);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -303,9 +338,9 @@ export default function Home() {
         'source-layer': 'road',
         'filter': ['==', ['get', 'class'], 'stair'],
         'paint': {
-          'line-color': '#f43f5e', // Rose for visibility
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 5],
-          'line-dasharray': [0.5, 0.5],
+          'line-color': '#f43f5e', // Rose
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 4, 18, 12],
+          'line-dasharray': [0.2, 0.2],
           'line-opacity': 0.9
         }
       });
@@ -321,10 +356,10 @@ export default function Home() {
           ['in', ['get', 'class'], ['literal', ['pedestrian', 'footway', 'path', 'sidewalk']]]
         ],
         'paint': {
-          'line-color': '#fbbf24', // Amber for bridges
-          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 2, 18, 6],
+          'line-color': '#fbbf24', // Amber
+          'line-width': ['interpolate', ['linear'], ['zoom'], 14, 4, 18, 12],
           'line-opacity': 0.9,
-          'line-blur': 1
+          'line-blur': 0.5
         }
       });
 
@@ -349,6 +384,47 @@ export default function Home() {
 
     return () => map.remove();
   }, []);
+
+  const MapLegend = () => (
+    <div className={`absolute top-24 right-4 z-30 transition-all duration-500 transform ${showLegend ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
+      <div className="bg-slate-900/90 border border-teal-500/30 p-5 rounded-3xl backdrop-blur-2xl shadow-2xl w-64 pointer-events-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-black uppercase text-teal-400 tracking-widest">Tactical Legend</h3>
+          <button onClick={() => setShowLegend(false)} className="text-slate-500 hover:text-white transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        <div className="space-y-4">
+          {[
+            { label: 'Pedestrian Lane', color: '#2dd4bf', dash: 'dashed' },
+            { label: 'Footbridge / Overpass', color: '#fbbf24', dash: 'solid', glow: true },
+            { label: 'Stairs / Elevation', color: '#f43f5e', dash: 'dotted' },
+            { label: 'Standard Sidewalk', color: '#2dd4bf', opacity: 0.4 },
+            { label: 'Transit Route', color: '#2dd4bf', width: 'h-1.5' },
+            { label: 'Walking Segment', color: '#94a3b8', dash: 'dashed' }
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="w-8 flex justify-center">
+                <div 
+                  className={`w-full ${item.width || 'h-1'} rounded-full ${item.dash === 'dashed' ? 'border-t-2 border-dashed' : item.dash === 'dotted' ? 'border-t-2 border-dotted' : 'bg-current'}`}
+                  style={{ 
+                    color: item.color, 
+                    backgroundColor: (item.dash === 'solid' || !item.dash) ? item.color : 'transparent',
+                    opacity: item.opacity || 1,
+                    boxShadow: item.glow ? `0 0 10px ${item.color}` : 'none'
+                  }}
+                />
+              </div>
+              <span className="text-[10px] font-black uppercase text-slate-300">{item.label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 pt-4 border-t border-white/5">
+          <p className="text-[9px] text-slate-500 leading-tight">Infrastructure types are weighted by safety and effort in route calculations.</p>
+        </div>
+      </div>
+    </div>
+  );
 
   const handleSelectRoute = (option: RouteOption) => {
     setSelectedRoute(option);
@@ -558,10 +634,18 @@ export default function Home() {
       
       result.path.forEach((p, idx) => {
         if (p.edge?.type === 'walk') {
-          if (idx === 0) pathInstructions.push(`Walk ${Math.round(p.edge.distance)}m to ${p.node.name}`);
+          let action = "Walk";
+          if (p.node.type === "stairs") action = "Take stairs";
+          if (p.node.type === "footbridge") action = "Cross footbridge";
+          if (p.node.type === "overpass") action = "Use overpass";
+          if (p.node.type === "pedestrian_lane") action = "Use pedestrian lane";
+
+          if (idx === 0) pathInstructions.push(`${action} to ${p.node.name} (${Math.round(p.edge.distance)}m)`);
           else if (currentTransitRoute) {
-            pathInstructions.push(`Alight at ${result.path[idx-1].node.name} and walk to ${p.node.name}`);
+            pathInstructions.push(`Alight at ${result.path[idx-1].node.name} and ${action.toLowerCase()} to ${p.node.name}`);
             currentTransitRoute = "";
+          } else {
+            pathInstructions.push(`${action} to ${p.node.name}`);
           }
         } else if (p.edge?.type === 'transit') {
           if (p.edge.routeName !== currentTransitRoute) {
@@ -611,11 +695,28 @@ export default function Home() {
   };
 
   const analyzeRoute = async () => {
+    if (routeOptions.length === 0) return;
     setIsAnalyzing(true);
-    await new Promise(r => setTimeout(r, 1500));
-    const insights = ["Route analysis complete.", "Traffic is normal. Proceed with current plan.", "Safe route verified. Efficiency: High."];
-    setAnalysisResult(insights[Math.floor(Math.random() * insights.length)]);
-    setIsAnalyzing(false);
+    try {
+      const { AIAnalyzer } = await import("@/lib/ai-analyzer");
+      const result = await AIAnalyzer.analyzeOptimalRoute(
+        routeOptions.map(r => ({
+          type: r.type,
+          duration: r.duration,
+          distance: r.distance,
+          fare: r.fare,
+          rides: r.rides
+        })),
+        activeStation,
+        routingPreference
+      );
+      setAnalysisResult(result);
+    } catch (error) {
+      console.error("AI Analysis error:", error);
+      setAnalysisResult("System encountered an error during analysis. Proceed with the recommended route.");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
@@ -624,6 +725,19 @@ export default function Home() {
       <div className={`absolute inset-0 z-0 transition-opacity duration-1000 ${mapLoaded ? 'opacity-100' : 'opacity-20'}`}>
         <div ref={mapRef} className="h-full w-full" />
       </div>
+
+      {/* Floating Legend Toggle */}
+      {mapLoaded && !isNavigating && (
+        <button 
+          onClick={() => setShowLegend(!showLegend)}
+          className="absolute top-24 right-4 z-40 p-3 bg-slate-900/80 border border-white/10 rounded-2xl backdrop-blur-xl text-teal-400 hover:text-white hover:border-teal-500/50 transition-all active:scale-95 group shadow-2xl"
+          title="Map Legend"
+        >
+          <svg className="w-5 h-5 group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+        </button>
+      )}
 
       {/* Tactical Navigation Overlay */}
       {isNavigating && (
@@ -660,8 +774,40 @@ export default function Home() {
         </div>
       )}
 
+      {/* Backend Loading Overlay */}
+      {backendStatus !== 'active' && (
+        <div className="absolute inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
+          <div className="glass-card-teal p-8 md:p-12 max-w-md w-full flex flex-col items-center border-teal-500/20">
+            {backendStatus === 'checking' ? (
+              <>
+                <div className="w-16 h-16 border-4 border-teal-500/20 border-t-teal-500 rounded-full animate-spin mb-6" />
+                <h2 className="text-xl font-black text-white uppercase tracking-wider mb-2">Connecting to Core</h2>
+                <p className="text-teal-400 text-sm font-mono animate-pulse">{backendCheckMessage}</p>
+                <p className="text-slate-500 text-xs mt-4">Waking up the neural grid... this may take up to 3 minutes.</p>
+              </>
+            ) : (
+              <>
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6 border border-red-500/20">
+                  <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-black text-red-400 uppercase tracking-wider mb-2">Connection Failed</h2>
+                <p className="text-slate-400 text-sm mb-6">{backendCheckMessage}</p>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="px-6 py-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all"
+                >
+                  Retry Connection
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Interface Overlay */}
-      <div className={`relative z-10 flex flex-col h-full pointer-events-none ${isNavigating ? 'hidden' : ''}`}>
+      <div className={`relative z-10 flex flex-col h-full pointer-events-none ${(isNavigating || backendStatus !== 'active') ? 'hidden' : ''}`}>
         <div className={`pointer-events-auto transition-all duration-500 ${journeyStarted ? 'hidden md:block' : ''}`}>
           <TopNav 
             user={user} 
@@ -673,7 +819,8 @@ export default function Home() {
           />
         </div>
 
-        <main className="flex-1 p-2 pb-4 md:p-8 flex flex-col overflow-hidden min-h-0">
+        <main className="flex-1 p-2 pb-4 md:p-8 flex flex-col overflow-hidden min-h-0 relative">
+          <MapLegend />
           <div className="max-w-screen-2xl mx-auto w-full h-full flex flex-col lg:flex-row gap-4 md:gap-8 items-end justify-end lg:justify-start pointer-events-none min-h-0">
             <div className="pointer-events-auto w-full lg:w-auto flex flex-col justify-end h-full min-h-0">
               <RoutingPanel 
