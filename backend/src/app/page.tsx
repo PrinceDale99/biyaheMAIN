@@ -108,7 +108,7 @@ export default function Home() {
     
     const checkBackend = async () => {
       try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://biyahemain.onrender.com';
         const res = await fetch(`${backendUrl}/api/health`, { method: 'GET', signal: AbortSignal.timeout(4500) });
         if (res.ok) {
           setBackendStatus("active");
