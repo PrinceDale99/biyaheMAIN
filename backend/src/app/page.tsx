@@ -242,7 +242,7 @@ export default function Home() {
   };
 
   useEffect(() => {
-    if (typeof window === "undefined" || !mapRef.current) return;
+    if (typeof window === "undefined" || !mapRef.current || !mapboxgl.accessToken) return;
 
     const map = new mapboxgl.Map({
       container: mapRef.current,
