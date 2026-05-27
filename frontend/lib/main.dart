@@ -83,7 +83,7 @@ class _BiyaheHomeScreenState extends State<BiheHomeScreen> {
         child: Opacity(
           opacity: 0.4,
           child: Image.network(
-            'https://maps.googleapis.com/maps/api/staticmap?center=14.6,121.0&zoom=12&size=1000x1000&key=YOUR_GOOGLE_MAPS_API_KEY',
+            'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1000&q=80',
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
