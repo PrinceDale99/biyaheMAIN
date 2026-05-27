@@ -123,14 +123,17 @@ export function RoutingPanel({
                 variant="primary"
                 onClick={analyzeRoute}
                 disabled={isAnalyzing}
-                className="px-5 md:px-6"
+                className="px-4 md:px-6 flex items-center gap-2"
               >
                 {isAnalyzing ? (
-                  <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.364-5.636l-.707-.707M6.342 16.126a7.5 7.5 0 1111.316 0l.243.517a.5.5 0 01-.456.702H6.555a.5.5 0 01-.456-.702l.243-.517z" />
-                  </svg>
+                  <>
+                    <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.364-5.636l-.707-.707M6.342 16.126a7.5 7.5 0 1111.316 0l.243.517a.5.5 0 01-.456.702H6.555a.5.5 0 01-.456-.702l.243-.517z" />
+                    </svg>
+                    <span className="text-[10px] font-black uppercase tracking-wider hidden md:inline">AI Analyze</span>
+                  </>
                 )}
               </TacticalButton>
             </div>
@@ -195,13 +198,15 @@ export function RoutingPanel({
 
         {/* AI Insights Layer */}
         {analysisResult && (
-          <div className="mt-6 p-5 bg-teal-500/10 border border-teal-500/30 rounded-3xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
+          <div className="mt-6 p-5 bg-teal-500/10 border border-teal-500/30 rounded-3xl animate-in zoom-in-95 duration-500 relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-teal-500 to-transparent animate-shimmer" />
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-              <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">Routing Engine</span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+                <span className="text-[10px] font-black uppercase text-teal-400 tracking-[0.2em]">Gemini AI Assistant</span>
+              </div>
             </div>
-            <p className="text-xs text-white/90 italic leading-relaxed">&quot;{analysisResult}&quot;</p>
+            <p className="text-xs text-white/90 leading-relaxed font-medium">{analysisResult}</p>
           </div>
         )}
       </GlassCard>

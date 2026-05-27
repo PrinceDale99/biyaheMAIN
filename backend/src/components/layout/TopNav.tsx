@@ -3,6 +3,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { User } from 'firebase/auth';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { LiveClock } from '@/components/ui/LiveClock';
 
 interface TopNavProps {
   user: User | null;
@@ -39,7 +40,11 @@ export function TopNav({
           </Link>
           <div className="flex flex-col">
             <h1 className="text-xl md:text-3xl font-black tracking-tighter leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">BIYAHE</h1>
-            <StatusBadge label="System Operational" />
+            <div className="flex items-center gap-2 md:gap-3">
+              <StatusBadge label="System Operational" />
+              <div className="w-px h-3 bg-white/10" />
+              <LiveClock />
+            </div>
           </div>
           </div>
 

@@ -36,4 +36,26 @@ export class AIAnalyzer {
       };
     }
   }
+
+  static async analyzeOptimalRoute(routes: any[], destination: string, preferences: string): Promise<string> {
+    try {
+      const response = await fetch('/api/analyze-route', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ routes, destination, preferences }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`);
+      }
+
+      const data = await response.json();
+      return data.recommendation;
+    } catch (error: any) {
+      console.error('[AI_ANALYZER] Route Analysis Error:', error.message || error);
+      return "AI analysis currently unavailable. Based on system metrics, the fastest route is recommended.";
+    }
+  }
 }

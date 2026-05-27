@@ -108,25 +108,25 @@ void TransitGraph::loadData() {
 
     // Transfers
     // LRT1 <-> LRT2
-    addTransfer("lrt1-doroteo-jose", "lrt2-recto", 5, 0.3);
+    addTransfer("lrt1-doroteo-jose", "lrt2-recto", 5, 0.3, "footbridge", 0.9);
     // LRT2 <-> MRT3
-    addTransfer("lrt2-cubao", "mrt3-cubao", 8, 0.4);
+    addTransfer("lrt2-cubao", "mrt3-cubao", 8, 0.4, "overpass", 0.9);
     // LRT1 <-> MRT3
-    addTransfer("mrt3-taft", "lrt1-edsa", 6, 0.3);
-    addTransfer("lrt1-roosevelt", "mrt3-north", 12, 0.8);
+    addTransfer("mrt3-taft", "lrt1-edsa", 6, 0.3, "footbridge", 0.9);
+    addTransfer("lrt1-roosevelt", "mrt3-north", 12, 0.8, "walk", 0.4); // Long walk on road/sidewalk
     
     // EDSA Carousel Transfers
-    addTransfer("lrt1-monumento", "edsa-monumento", 3, 0.1);
-    addTransfer("lrt1-balintawak", "edsa-balintawak", 3, 0.1);
-    addTransfer("lrt1-roosevelt", "edsa-roosevelt", 3, 0.1);
-    addTransfer("mrt3-north", "edsa-north", 3, 0.1);
-    addTransfer("mrt3-quezon", "edsa-quezon", 3, 0.1);
-    addTransfer("mrt3-santolan", "edsa-santolan", 3, 0.1);
-    addTransfer("mrt3-ortigas", "edsa-ortigas", 3, 0.1);
-    addTransfer("mrt3-guadalupe", "edsa-guadalupe", 3, 0.1);
-    addTransfer("mrt3-buendia", "edsa-buendia", 3, 0.1);
-    addTransfer("mrt3-ayala", "edsa-ayala", 3, 0.1);
-    addTransfer("mrt3-taft", "edsa-taft", 3, 0.1);
+    addTransfer("lrt1-monumento", "edsa-monumento", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("lrt1-balintawak", "edsa-balintawak", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("lrt1-roosevelt", "edsa-roosevelt", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-north", "edsa-north", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-quezon", "edsa-quezon", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-santolan", "edsa-santolan", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-ortigas", "edsa-ortigas", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-guadalupe", "edsa-guadalupe", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-buendia", "edsa-buendia", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-ayala", "edsa-ayala", 3, 0.1, "pedestrian_lane", 0.8);
+    addTransfer("mrt3-taft", "edsa-taft", 3, 0.1, "pedestrian_lane", 0.8);
 }
 
 void TransitGraph::addStation(const std::string& id, const std::string& name, double lat, double lon, std::string zone) {
@@ -137,9 +137,9 @@ void TransitGraph::addRoute(const std::string& id, const std::string& name, cons
     routes[id] = {id, name, color, mode, stops, speed, 30, 15.0, 1.5, 5, 10};
 }
 
-void TransitGraph::addTransfer(const std::string& from, const std::string& to, int min, double dist) {
-    transfers.push_back({from, to, min, dist});
-    transfers.push_back({to, from, min, dist});
+void TransitGraph::addTransfer(const std::string& from, const std::string& to, int min, double dist, const std::string& infra, double safety) {
+    transfers.push_back({from, to, min, dist, infra, safety});
+    transfers.push_back({to, from, min, dist, infra, safety});
 }
 
 const Station* TransitGraph::getStation(const std::string& id) const {

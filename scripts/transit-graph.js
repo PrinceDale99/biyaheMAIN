@@ -147,10 +147,10 @@ const TransitGraph = (() => {
 
   // ─── TRANSFERS (walking connections between nearby stations) ───
   const transfers = [
-    { from: 'lrt1-doroteo-jose', to: 'lrt2-recto', walkMin: 5, distance: 0.3 },
-    { from: 'lrt2-cubao', to: 'mrt3-cubao', walkMin: 8, distance: 0.4 },
-    { from: 'lrt1-roosevelt', to: 'mrt3-north', walkMin: 12, distance: 0.8 },
-    { from: 'mrt3-taft', to: 'lrt1-edsa', walkMin: 6, distance: 0.3 },
+    { from: 'lrt1-doroteo-jose', to: 'lrt2-recto', walkMin: 5, distance: 0.3, infrastructure: 'footbridge', safety: 0.9 },
+    { from: 'lrt2-cubao', to: 'mrt3-cubao', walkMin: 8, distance: 0.4, infrastructure: 'overpass', safety: 0.9 },
+    { from: 'lrt1-roosevelt', to: 'mrt3-north', walkMin: 12, distance: 0.8, infrastructure: 'walk', safety: 0.4 },
+    { from: 'mrt3-taft', to: 'lrt1-edsa', walkMin: 6, distance: 0.3, infrastructure: 'footbridge', safety: 0.9 },
     { from: 'mrt3-taft', to: 'edsa-taft', walkMin: 3, distance: 0.15 },
     { from: 'mrt3-north', to: 'edsa-sm-north', walkMin: 5, distance: 0.25 },
     { from: 'mrt3-cubao', to: 'edsa-cubao', walkMin: 4, distance: 0.2 },

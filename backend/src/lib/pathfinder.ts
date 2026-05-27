@@ -5,7 +5,7 @@ export interface Waypoint {
   name: string;
   lat: number;
   lng: number;
-  type: "pickup" | "dropoff" | "both" | "waypoint" | "direct";
+  type: "pickup" | "dropoff" | "both" | "waypoint" | "direct" | "stairs" | "footbridge" | "overpass" | "pedestrian_lane";
   fare: number;
 }
 
@@ -38,6 +38,7 @@ export interface PathEdge {
   routeId?: string;
   routeName?: string;
   vehicleType?: string;
+  pedestrianSafety?: number; // 0 to 1, where 1 is safest
 }
 
 export class Pathfinder {
@@ -60,6 +61,10 @@ export class Pathfinder {
       case "lrt/mrt": return 35 / 3.6;
       case "trike": return 12 / 3.6;
       case "walk": return 4 / 3.6; // 4 km/h
+      case "stairs": return 1.5 / 3.6; // Much slower
+      case "footbridge": return 3.5 / 3.6; 
+      case "overpass": return 3 / 3.6; // Slower due to elevation
+      case "pedestrian_lane": return 4 / 3.6;
       default: return 15 / 3.6;
     }
   }
@@ -141,28 +146,34 @@ export class Pathfinder {
     allNodes.forEach(node => {
       if (node.id === "origin" || node.id === "destination") return;
       
+      // Walking distance thresholds
+      const MAX_WALK_TO_TRANSIT = 2000;
+      const MAX_WALK_TRANSFER = 400;
+
       if (node.type === "pickup" || node.type === "both") {
         const dist = this.haversine(origin.lat, origin.lng, node.lat, node.lng);
-        if (dist < 2000) {
+        if (dist < MAX_WALK_TO_TRANSIT) {
           edges.push({
             from: "origin",
             to: node.id,
             weight: dist / this.getAvgSpeed("walk"),
             distance: dist,
-            type: "walk"
+            type: "walk",
+            pedestrianSafety: 0.5 // Default unknown safety
           });
         }
       }
 
       if (node.type === "dropoff" || node.type === "both") {
         const dist = this.haversine(destCoords.lat, destCoords.lng, node.lat, node.lng);
-        if (dist < 2000) {
+        if (dist < MAX_WALK_TO_TRANSIT) {
           edges.push({
             from: node.id,
             to: "destination",
             weight: dist / this.getAvgSpeed("walk"),
             distance: dist,
-            type: "walk"
+            type: "walk",
+            pedestrianSafety: 0.5
           });
         }
       }
@@ -172,22 +183,45 @@ export class Pathfinder {
         if (node.id === "origin" || node.id === "destination" || otherNode.id === "origin" || otherNode.id === "destination") return;
 
         const dist = this.haversine(node.lat, node.lng, otherNode.lat, otherNode.lng);
-        if (dist < 300) {
+        if (dist < MAX_WALK_TRANSFER) {
+          // Calculate speed based on infrastructure type
+          let speed = this.getAvgSpeed("walk");
+          let safety = 0.5;
+
+          if (node.type === "stairs" || otherNode.type === "stairs") speed = this.getAvgSpeed("stairs");
+          if (node.type === "footbridge" || otherNode.type === "footbridge") {
+            speed = this.getAvgSpeed("footbridge");
+            safety = 0.9; // Footbridges are safer than roads
+          }
+          if (node.type === "overpass" || otherNode.type === "overpass") {
+            speed = this.getAvgSpeed("overpass");
+            safety = 0.95;
+          }
+          if (node.type === "pedestrian_lane" || otherNode.type === "pedestrian_lane") safety = 0.8;
+
+          const baseWeight = dist / speed;
+          // Apply safety penalty: less safe routes feel "longer"
+          const safetyPenalty = (1 - safety) * 120; // Up to 2 mins penalty for unsafe routes
+          
           edges.push({
             from: node.id,
             to: otherNode.id,
-            weight: (dist / this.getAvgSpeed("walk")) + 120,
+            weight: baseWeight + safetyPenalty + 60, // 1 min fixed transfer overhead
             distance: dist,
-            type: "walk"
+            type: "walk",
+            pedestrianSafety: safety
           });
         }
       });
 
-      // Handle Iskinitas (Direct connections) - Give them a shortcut bonus
+      // Special handling for Iskinitas (Direct shortcuts) - 30% bonus
       if (node.type === "direct") {
         edges.forEach(e => {
           if (e.to === node.id || e.from === node.id) {
-            e.weight *= 0.7; // 30% Shortcut Bonus for Iskinitas/Footbridges
+            if (e.type === "walk") {
+              e.weight *= 0.7; 
+              e.pedestrianSafety = Math.max(e.pedestrianSafety || 0, 0.7);
+            }
           }
         });
       }

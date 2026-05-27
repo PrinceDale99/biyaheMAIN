@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 import 'package:biyahe_app/screens/navigation_screen.dart';
 import 'package:biyahe_app/screens/search_screen.dart';
+import 'package:biyahe_app/screens/auth/login_screen.dart';
+import 'package:biyahe_app/screens/chat_screen.dart';
+import 'package:biyahe_app/screens/rewards_screen.dart';
+import 'package:biyahe_app/services/auth_service.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:provider/provider.dart';
 
 // PRODUCTION READY: Centralized Theme & Constants
 class BiyaheTheme {
@@ -17,7 +22,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   MapboxOptions.setAccessToken(const String.fromEnvironment("MAPBOX_ACCESS_TOKEN", defaultValue: "YOUR_MAPBOX_ACCESS_TOKEN_HERE"));
-  runApp(const BiyaheApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthService()),
+      ],
+      child: const BiyaheApp(),
+    ),
+  );
 }
 
 class BiyaheApp extends StatelessWidget {
@@ -114,70 +126,81 @@ class _BiyaheHomeScreenState extends State<BiyaheHomeScreen> {
   }
 
   Widget _buildHeader() {
-    return GestureDetector(
-      onTap: () async {
-        final result = await Navigator.of(context).push(
-          MaterialPageRoute(builder: (context) => const SearchScreen()),
-        );
-        if (result != null && result is Map<String, dynamic>) {
-          setState(() {
-            _destinationName = result['description'] ?? 'Destination';
-          });
-          if (mapboxMap != null && pointAnnotationManager != null && result['lat'] != null && result['lng'] != null) {
-            final targetPoint = Point(coordinates: Position(result['lng'], result['lat']));
-            mapboxMap?.flyTo(
-              CameraOptions(
-                center: targetPoint,
-                zoom: 16.0,
-                pitch: 60.0,
-              ),
-              MapAnimationOptions(duration: 2000),
+    return Consumer<AuthService>(
+      builder: (context, authService, child) {
+        return GestureDetector(
+          onTap: () async {
+            final result = await Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => const SearchScreen()),
             );
-            
-            pointAnnotationManager?.deleteAll();
-            // In a real app we'd load an image from assets or network for the icon.
-            // Using a simple red circle workaround for now or basic PointAnnotationOptions.
-            pointAnnotationManager?.create(PointAnnotationOptions(
-              geometry: targetPoint,
-              // image: ... 
-            ));
-          }
-        }
-      },
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.location_on, color: BiyaheTheme.primary, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _destinationName,
-                    style: const TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.w500),
+            if (result != null && result is Map<String, dynamic>) {
+              setState(() {
+                _destinationName = result['description'] ?? 'Destination';
+              });
+              if (mapboxMap != null && pointAnnotationManager != null && result['lat'] != null && result['lng'] != null) {
+                final targetPoint = Point(coordinates: Position(result['lng'], result['lat']));
+                mapboxMap?.flyTo(
+                  CameraOptions(
+                    center: targetPoint,
+                    zoom: 16.0,
+                    pitch: 60.0,
                   ),
+                  MapAnimationOptions(duration: 2000),
+                );
+                
+                pointAnnotationManager?.deleteAll();
+                pointAnnotationManager?.create(PointAnnotationOptions(
+                  geometry: targetPoint,
+                ));
+              }
+            }
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
                 ),
-                const VerticalDivider(color: Colors.white10, width: 24),
-                const Icon(Icons.mic, color: Colors.white38, size: 20),
-                const SizedBox(width: 12),
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: BiyaheTheme.primary.withOpacity(0.2),
-                  backgroundImage: const NetworkImage('https://i.pravatar.cc/150?u=juan'),
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on, color: BiyaheTheme.primary, size: 20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _destinationName,
+                        style: const TextStyle(color: Colors.white38, fontSize: 14, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    const VerticalDivider(color: Colors.white10, width: 24),
+                    const Icon(Icons.mic, color: Colors.white38, size: 20),
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: () {
+                        if (!authService.isAuthenticated) {
+                          Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LoginScreen()));
+                        }
+                      },
+                      child: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: BiyaheTheme.primary.withOpacity(0.2),
+                        backgroundImage: authService.isAuthenticated && authService.userProfile?.photoUrl != null 
+                          ? NetworkImage(authService.userProfile!.photoUrl!) 
+                          : const NetworkImage('https://i.pravatar.cc/150?u=juan'),
+                        child: !authService.isAuthenticated ? const Icon(Icons.person, color: Colors.white54, size: 20) : null,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      }
     );
   }
 
@@ -287,24 +310,38 @@ class _BiyaheHomeScreenState extends State<BiyaheHomeScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildNavItem(Icons.explore_outlined, 'Explore', false),
-            _buildNavItem(Icons.directions_outlined, 'Routes', true),
-            _buildNavItem(Icons.favorite_outline, 'Saved', false),
-            _buildNavItem(Icons.person_outline, 'Profile', false),
+            _buildNavItem(Icons.map, 'Map', true, () {}),
+            _buildNavItem(Icons.chat_bubble_outline, 'Assistant', false, () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const ChatScreen()));
+            }),
+            _buildNavItem(Icons.stars_outlined, 'Rewards', false, () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (context) => const RewardsScreen()));
+            }),
+            _buildNavItem(Icons.person_outline, 'Profile', false, () {
+              final authService = Provider.of<AuthService>(context, listen: false);
+              if (!authService.isAuthenticated) {
+                Navigator.of(context).push(MaterialPageRoute(builder: (context) => const LoginScreen()));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Logged in as \${authService.userProfile?.email}')));
+              }
+            }),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNavItem(IconData icon, String label, bool active) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: active ? BiyaheTheme.primary : Colors.white24, size: 24),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: active ? BiyaheTheme.primary : Colors.white24, fontSize: 10, fontWeight: FontWeight.bold)),
-      ],
+  Widget _buildNavItem(IconData icon, String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: active ? BiyaheTheme.primary : Colors.white24, size: 24),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(color: active ? BiyaheTheme.primary : Colors.white24, fontSize: 10, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }

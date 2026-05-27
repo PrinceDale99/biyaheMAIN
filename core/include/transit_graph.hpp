@@ -22,6 +22,8 @@ struct Transfer {
     std::string to;
     int walkMin;
     double distance;
+    std::string infrastructure; // e.g., "footbridge", "stairs", "overpass", "pedestrian_lane"
+    double safetyFactor; // 0.0 to 1.0
 };
 
 struct RouteDefinition {
@@ -58,7 +60,7 @@ private:
 
     void addStation(const std::string& id, const std::string& name, double lat, double lon, std::string zone);
     void addRoute(const std::string& id, const std::string& name, const std::string& color, const std::string& mode, std::vector<std::string> stops, double speed);
-    void addTransfer(const std::string& from, const std::string& to, int min, double dist);
+    void addTransfer(const std::string& from, const std::string& to, int min, double dist, const std::string& infra = "walk", double safety = 0.5);
 };
 
 } // namespace biyahe
