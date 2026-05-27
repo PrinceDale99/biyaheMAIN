@@ -55,6 +55,7 @@ export default function AdminPage() {
   const ADMIN_EMAIL = "princedalelimosnero@gmail.com";
 
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (!currentUser || currentUser.email !== ADMIN_EMAIL) {

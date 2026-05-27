@@ -15,9 +15,9 @@ const firebaseConfig = {
 
 // Initialize Firebase lazily/safely (SSR/Build Friendly)
 let app: any = null;
-let auth: Auth | null = null;
-let db: Firestore | null = null;
-let googleProvider: GoogleAuthProvider | null = null;
+let auth: Auth = null as any;
+let db: Firestore = null as any;
+let googleProvider: GoogleAuthProvider = null as any;
 
 if (typeof process !== 'undefined' && process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
   app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
