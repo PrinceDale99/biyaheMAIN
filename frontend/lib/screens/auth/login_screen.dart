@@ -53,7 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                         ),
                         const Text(
-                          'Sign in to B.I.Y.A.H.E.',
+                          'Sign in to Biyahe',
                           style: TextStyle(color: Colors.white54, fontSize: 14),
                         ),
                         const SizedBox(height: 40),

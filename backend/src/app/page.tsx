@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import { auth, db } from "@/lib/firebase";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
+import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { collection, getDocs } from "firebase/firestore";
 import { Pathfinder, TransportInfo } from "@/lib/pathfinder";
+import { TopNav } from "@/components/layout/TopNav";
+import { BottomNav } from "@/components/layout/BottomNav";
+import { RoutingPanel } from "@/components/layout/RoutingPanel";
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { loadGoogleMaps } from "@/lib/google-maps";
+
+// Replace with your Mapbox Access Token
+mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
+
+
+type RouteSegment = {
+  type: 'walk' | 'transit';
+  coordinates: [number, number][];
+};
 
 type RouteOption = {
   id: string;
@@ -15,16 +28,40 @@ type RouteOption = {
   fare: number;
   duration: string;
   distance: string;
-  result: google.maps.DirectionsResult;
-  routeIndex: number;
+  geometry?: any; 
+  segments?: RouteSegment[];
   instructions: string[];
-  fallbackPath?: { lat: number; lng: number }[];
+};
+
+export type RoutingPreference = 'recommended' | 'fastest' | 'cheapest' | 'walk';
+
+const calculateBearing = (start: [number, number], end: [number, number]): number => {
+  const startLat = (start[1] * Math.PI) / 180;
+  const startLng = (start[0] * Math.PI) / 180;
+  const endLat = (end[1] * Math.PI) / 180;
+  const endLng = (end[0] * Math.PI) / 180;
+
+  const y = Math.sin(endLng - startLng) * Math.cos(endLat);
+  const x =
+    Math.cos(startLat) * Math.sin(endLat) -
+    Math.sin(startLat) * Math.cos(endLat) * Math.cos(endLng - startLng);
+  const bearing = (Math.atan2(y, x) * 180) / Math.PI;
+  return (bearing + 360) % 360;
 };
 
 export default function Home() {
   const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<mapboxgl.Map | null>(null);
+  const userMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const lastLocRef = useRef<[number, number] | null>(null);
+  const googleServices = useRef<{
+    directionsService: google.maps.DirectionsService | null;
+    placesService: google.maps.places.PlacesService | null;
+    autocompleteService: google.maps.places.AutocompleteService | null;
+  }>({ directionsService: null, placesService: null, autocompleteService: null });
   const [journeyStarted, setJourneyStarted] = useState(false);
   const [activeStation, setActiveStation] = useState("LRT-1 Doroteo Jose");
+  const [destinationCoords, setDestinationCoords] = useState<{lat: number, lng: number} | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [reputation, setReputation] = useState(98.2);
@@ -33,16 +70,71 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
-  const [userLocation, setUserLocation] = useState<google.maps.LatLngLiteral | null>(null);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRoute, setSelectedRoute] = useState<RouteOption | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [routingPreference, setRoutingPreference] = useState<RoutingPreference>('recommended');
+  const [currentHeading, setCurrentHeading] = useState(0);
+  const searchMarker = useRef<mapboxgl.Marker | null>(null);
 
-  const googleMapInstance = useRef<google.maps.Map | null>(null);
-  const directionsService = useRef<google.maps.DirectionsService | null>(null);
-  const directionsRenderer = useRef<google.maps.DirectionsRenderer | null>(null);
+  const speak = (text: string) => {
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
 
+  useEffect(() => {
+    if (isNavigating && instructions.length > 0) {
+      const cleanText = instructions[0].replace(/<[^>]*>?/gm, '');
+      speak(`Starting navigation. ${cleanText}`);
+    }
+  }, [isNavigating, instructions]);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    loadGoogleMaps().then(() => {
+      googleServices.current = {
+        directionsService: new google.maps.DirectionsService(),
+        placesService: new google.maps.places.PlacesService(document.createElement('div')),
+        autocompleteService: new google.maps.places.AutocompleteService(),
+      };
+
+      if (searchInputRef.current) {
+        const autocomplete = new google.maps.places.Autocomplete(searchInputRef.current, {
+          componentRestrictions: { country: "ph" },
+          fields: ["address_components", "geometry", "name", "formatted_address"],
+        });
+
+        autocomplete.addListener("place_changed", () => {
+          const place = autocomplete.getPlace();
+          if (place.geometry && place.geometry.location) {
+            const pos: [number, number] = [place.geometry.location.lng(), place.geometry.location.lat()];
+            const coords = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+
+            setActiveStation(place.name || place.formatted_address || "");
+            setDestinationCoords(coords);
+
+            if (mapInstance.current) {
+              mapInstance.current.flyTo({ center: pos, zoom: 16 });
+
+              if (searchMarker.current) searchMarker.current.remove();
+              searchMarker.current = new mapboxgl.Marker({ color: '#2dd4bf' })
+                .setLngLat(pos)
+                .setPopup(new mapboxgl.Popup().setHTML(`<div className="p-3 text-slate-900"><h3 className="font-black uppercase text-xs mb-1">${place.name}</h3><p className="text-[10px] text-slate-600 font-medium">${place.formatted_address}</p></div>`))
+                .addTo(mapInstance.current);
+            }
+          }
+        });
+      }
+    });
+  }, []);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -57,20 +149,90 @@ export default function Home() {
 
   useEffect(() => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
+      const watchId = navigator.geolocation.watchPosition(
         (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
+          const newLoc: [number, number] = [position.coords.longitude, position.coords.latitude];
+          let heading = position.coords.heading;
+
+          // Calculate heading if not provided by device
+          if (heading === null && lastLocRef.current) {
+            const [lng1, lat1] = lastLocRef.current;
+            const [lng2, lat2] = newLoc;
+            const dist = Math.sqrt(Math.pow(lng2 - lng1, 2) + Math.pow(lat2 - lat1, 2));
+            if (dist > 0.00001) { // ~1m movement
+              heading = calculateBearing(lastLocRef.current, newLoc);
+            }
+          }
+
+          if (mapInstance.current) {
+            // Update User Marker
+            if (!userMarkerRef.current) {
+              const el = document.createElement('div');
+              el.className = 'user-location-marker';
+              el.innerHTML = `
+                <div class="relative w-8 h-8 flex items-center justify-center">
+                  <div class="absolute inset-0 bg-teal-500/20 rounded-full animate-ping"></div>
+                  <div class="relative w-4 h-4 bg-teal-500 rounded-full border-2 border-slate-900 shadow-[0_0_15px_rgba(20,184,166,0.6)]"></div>
+                  <div class="absolute -top-1 pointer-events-none transition-transform duration-300" style="transform: rotate(${heading || 0}deg) translateY(-6px)">
+                    <div class="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-b-[8px] border-b-teal-400"></div>
+                  </div>
+                </div>
+              `;
+              userMarkerRef.current = new mapboxgl.Marker({ element: el })
+                .setLngLat(newLoc)
+                .addTo(mapInstance.current);
+            } else {
+              userMarkerRef.current.setLngLat(newLoc);
+              const arrow = userMarkerRef.current.getElement().querySelector('.absolute.-top-1') as HTMLElement;
+              if (arrow) arrow.style.transform = `rotate(${heading || 0}deg) translateY(-6px)`;
+            }
+
+            // Initial fly-to user location
+            if (!lastLocRef.current) {
+              mapInstance.current.flyTo({ center: newLoc, zoom: 15 });
+            }
+
+            if (isNavigating) {
+              updateChaseCam(newLoc, heading || 0);
+            }
+          }
+
+          lastLocRef.current = newLoc;
+          setUserLocation(newLoc);
         },
-        (error) => console.warn("Geolocation error:", error)
+        (error) => console.warn("Geolocation error:", error),
+        { enableHighAccuracy: true }
       );
+      return () => navigator.geolocation.clearWatch(watchId);
     }
-  }, []);
+  }, [isNavigating]);
+
+  const updateChaseCam = (lngLat: [number, number], heading: number) => {
+    if (!mapInstance.current) return;
+    setCurrentHeading(heading);
+    
+    // Low-level camera control for 3D navigation feel
+    const camera = mapInstance.current.getFreeCameraOptions();
+
+    // Position camera behind user based on heading
+    const rad = (heading || 0) * (Math.PI / 180);
+    const offset = 0.0008; // slightly closer for better detail
+    const camLng = lngLat[0] - Math.sin(rad) * offset;
+    const camLat = lngLat[1] - Math.cos(rad) * offset;
+    
+    camera.position = mapboxgl.MercatorCoordinate.fromLngLat(
+      [camLng, camLat],
+      120 // altitude in meters, lower for more immersive 3D
+    );
+
+    camera.lookAtPoint(lngLat);
+    
+    // Apply camera options
+    mapInstance.current.setFreeCameraOptions(camera);
+  };
 
   const handleSignOut = async () => {
-    if (!window.confirm("Are you sure you want to abort the uplink and sign out?")) return;
+    if (!window.confirm("Are you sure you want to sign out?")) return;
     try {
       await signOut(auth);
     } catch (error) {
@@ -78,777 +240,426 @@ export default function Home() {
     }
   };
 
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const autocomplete = useRef<google.maps.places.Autocomplete | null>(null);
-
   useEffect(() => {
-    const initMap = async () => {
-      if (typeof window === "undefined" || !mapRef.current) return;
+    if (typeof window === "undefined" || !mapRef.current) return;
 
-      const landmarks = [
-        { name: "UST, España Blvd", pos: { lat: 14.6091, lng: 120.9893 }, type: "University" },
-        { name: "SM Makati", pos: { lat: 14.5502, lng: 121.0264 }, type: "Mall" },
-        { name: "Barangay 669", pos: { lat: 14.5786, lng: 120.9848 }, type: "Barangay" },
-        { name: "LRT-1 Doroteo Jose", pos: { lat: 14.6054, lng: 120.9822 }, type: "Station" }
-      ];
+    const map = new mapboxgl.Map({
+      container: mapRef.current,
+      style: 'mapbox://styles/mapbox/dark-v11', // High-contrast tactical style
+      center: [120.9842, 14.5995],
+      zoom: 14,
+      pitch: 45,
+      antialias: true
+    });
 
-      try {
-        const { Loader } = await import("@googlemaps/js-api-loader");
-        const loader = new Loader({
-          apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-          version: "weekly",
-          libraries: ["places", "routes"]
-        });
+    mapInstance.current = map;
 
-        const google = await loader.load();
+    map.on('style.load', () => {
+      // Add 3D terrain
+      map.addSource('mapbox-dem', {
+        'type': 'raster-dem',
+        'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+        'tileSize': 512,
+        'maxzoom': 14
+      });
+      map.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.5 });
 
-        const PHILIPPINES_BOUNDS = {
-          north: 21.1,
-          south: 4.4,
-          west: 116.9,
-          east: 126.6,
-        };
-
-        const mapOptions: google.maps.MapOptions = {
-          center: { lat: 14.5995, lng: 120.9842 },
-          zoom: 14,
-          disableDefaultUI: true,
-          clickableIcons: false,
-          restriction: {
-            latLngBounds: PHILIPPINES_BOUNDS,
-            strictBounds: false,
-          },
-          styles: [
-            { elementType: "geometry", stylers: [{ color: "#0f172a" }] },
-            { elementType: "labels.text.fill", stylers: [{ color: "#94a3b8" }] },
-            { elementType: "labels.text.stroke", stylers: [{ visibility: "off" }] },
-            { featureType: "administrative", elementType: "geometry.stroke", stylers: [{ color: "#334155" }] },
-            { featureType: "landscape", elementType: "geometry", stylers: [{ color: "#111827" }] },
-            { featureType: "road", elementType: "geometry", stylers: [{ color: "#1e293b" }] },
-            { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#334155" }] },
-            { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2dd4bf" }] },
-            { featureType: "transit.line", elementType: "geometry", stylers: [{ color: "#2dd4bf", weight: 3 }] },
-            { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#2dd4bf" }] },
-            { featureType: "water", elementType: "geometry", stylers: [{ color: "#020617" }] }
-          ]
-        };
-
-        const map = new google.maps.Map(mapRef.current, mapOptions);
-        googleMapInstance.current = map;
-
-        directionsService.current = new google.maps.DirectionsService();
-        directionsRenderer.current = new google.maps.DirectionsRenderer({
-          map,
-          suppressMarkers: true,
-          polylineOptions: {
-            strokeColor: "#2dd4bf",
-            strokeWeight: 6,
-            strokeOpacity: 0.8
-          }
-        });
-
-        if (searchInputRef.current) {
-          autocomplete.current = new google.maps.places.Autocomplete(searchInputRef.current, {
-            fields: ["geometry", "name", "formatted_address", "types"],
-            componentRestrictions: { country: "ph" },
-            types: [] // Empty array means search all types (establishments, geocodes, etc)
-          });
-
-          autocomplete.current.addListener("place_changed", () => {
-            const place = autocomplete.current?.getPlace();
-            if (place?.geometry?.location) {
-              const location = place.geometry.location;
-              map.panTo(location);
-              map.setZoom(17);
-              setActiveStation(place.name || place.formatted_address || "Selected Location");
-              setSearchQuery(place.formatted_address || "");
-
-              new google.maps.Marker({
-                position: location,
-                map,
-                icon: {
-                  path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                  scale: 6,
-                  fillColor: "#2dd4bf",
-                  fillOpacity: 1,
-                  strokeWeight: 2,
-                  strokeColor: "#ffffff"
-                }
-              });
-            }
-          });
+      // Add 3D buildings
+      map.addLayer({
+        'id': '3d-buildings',
+        'source': 'composite',
+        'source-layer': 'building',
+        'filter': ['==', 'extrude', 'true'],
+        'type': 'fill-extrusion',
+        'minzoom': 15,
+        'paint': {
+          'fill-extrusion-color': '#334155',
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': ['get', 'min_height'],
+          'fill-extrusion-opacity': 0.6
         }
+      });
 
-        landmarks.forEach(l => {
-          const marker = new google.maps.Marker({
-            position: l.pos,
-            map,
-            title: l.name,
-            icon: {
-              path: google.maps.SymbolPath.CIRCLE,
-              scale: 8,
-              fillColor: l.type === "Station" ? "#2dd4bf" : "#f59e0b",
-              fillOpacity: 1,
-              strokeWeight: 3,
-              strokeColor: "#020617"
-            }
-          });
-          marker.addListener("click", () => setActiveStation(l.name));
-        });
+      setMapLoaded(true);
+    });
 
-        setMapLoaded(true);
-      } catch (err) {
-        console.error("Map Load Error:", err);
-        setMapError("Critical Error: Tactical Grid Offline. Check satellite uplink.");
-      }
-    };
-
-    initMap();
+    return () => map.remove();
   }, []);
-
-  const fallbackPolyline = useRef<google.maps.Polyline | null>(null);
 
   const handleSelectRoute = (option: RouteOption) => {
     setSelectedRoute(option);
+    if (!mapInstance.current) return;
 
-    // Clear previous directions or fallback polyline
-    if (directionsRenderer.current) {
-      directionsRenderer.current.setDirections({ routes: [] } as any);
-    }
-    if (fallbackPolyline.current) {
-      fallbackPolyline.current.setMap(null);
-    }
+    // Clear existing routes
+    const existingLayers = ['route-layer-transit', 'route-layer-walk', 'route-layer'];
+    const existingSources = ['route-transit', 'route-walk', 'route'];
 
-    if (option.result) {
-      if (directionsRenderer.current) {
-        directionsRenderer.current.setDirections(option.result);
-        directionsRenderer.current.setRouteIndex(option.routeIndex);
+    existingLayers.forEach(l => {
+      if (mapInstance.current?.getLayer(l)) mapInstance.current.removeLayer(l);
+    });
+    existingSources.forEach(s => {
+      if (mapInstance.current?.getSource(s)) mapInstance.current.removeSource(s);
+    });
+
+    if (option.segments) {
+      const transitSegments = option.segments.filter(s => s.type === 'transit');
+      const walkSegments = option.segments.filter(s => s.type === 'walk');
+
+      if (transitSegments.length > 0) {
+        mapInstance.current.addSource('route-transit', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: transitSegments.map(s => ({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'LineString', coordinates: s.coordinates }
+            }))
+          }
+        });
+        mapInstance.current.addLayer({
+          id: 'route-layer-transit',
+          type: 'line',
+          source: 'route-transit',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 'line-color': '#2dd4bf', 'line-width': 6, 'line-opacity': 0.8 }
+        });
       }
-    } else if (option.fallbackPath && googleMapInstance.current) {
-      const isNeural = option.id === 'neural-grid-optimal';
-      // Draw a simulated tactical fallback path
-      fallbackPolyline.current = new google.maps.Polyline({
-        path: option.fallbackPath,
-        geodesic: true,
-        strokeColor: isNeural ? '#06b6d4' : '#f43f5e', // Cyan for Neural, Rose for Fallback
-        strokeOpacity: 0.8,
-        strokeWeight: 6,
-        map: googleMapInstance.current
+
+      if (walkSegments.length > 0) {
+        mapInstance.current.addSource('route-walk', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: walkSegments.map(s => ({
+              type: 'Feature',
+              properties: {},
+              geometry: { type: 'LineString', coordinates: s.coordinates }
+            }))
+          }
+        });
+        mapInstance.current.addLayer({
+          id: 'route-layer-walk',
+          type: 'line',
+          source: 'route-walk',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: { 
+            'line-color': '#94a3b8', 
+            'line-width': 4, 
+            'line-opacity': 0.6,
+            'line-dasharray': [2, 2]
+          }
+        });
+      }
+
+      // Fit bounds
+      const allCoords = option.segments.flatMap(s => s.coordinates);
+      if (allCoords.length > 0) {
+        const bounds = allCoords.reduce((acc: mapboxgl.LngLatBounds, coord: [number, number]) => {
+          return acc.extend(coord);
+        }, new mapboxgl.LngLatBounds(allCoords[0], allCoords[0]));
+        mapInstance.current.fitBounds(bounds, { padding: 50 });
+      }
+    } else if (option.geometry) {
+      // Fallback for single geometry (e.g. from pathfinder)
+      mapInstance.current.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          properties: {},
+          geometry: option.geometry
+        }
+      });
+      mapInstance.current.addLayer({
+        id: 'route-layer',
+        type: 'line',
+        source: 'route',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: { 'line-color': '#2dd4bf', 'line-width': 6, 'line-opacity': 0.8 }
       });
 
-      const bounds = new google.maps.LatLngBounds();
-      option.fallbackPath.forEach(p => bounds.extend(p));
-      googleMapInstance.current.fitBounds(bounds);
+      const coordinates = option.geometry.coordinates;
+      const bounds = coordinates.reduce((acc: mapboxgl.LngLatBounds, coord: [number, number]) => {
+        return acc.extend(coord);
+      }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+      mapInstance.current.fitBounds(bounds, { padding: 50 });
     }
 
-    setTravelInfo({
-      distance: option.distance,
-      duration: option.duration
-    });
+    setTravelInfo({ distance: option.distance, duration: option.duration });
     setInstructions(option.instructions);
     setAnalysisResult(null);
   };
 
   const calculateRoute = async () => {
-    if (!activeStation || !directionsService.current) return;
+    if (!activeStation || !googleServices.current.directionsService) return;
     setLoading(true);
-    setInstructions([]);
-    setAnalysisResult(null);
-    setRouteOptions([]);
-    setSelectedRoute(null);
-
-    const origin = userLocation || { lat: 14.5895, lng: 120.9816 }; // Manila City Hall default
-    const destination = activeStation;
-
+    
+    const origin = userLocation ? { lat: userLocation[1], lng: userLocation[0] } : { lat: 14.5895, lng: 120.9816 };
+    const destination = destinationCoords || activeStation;
+    
     try {
-      // Feed user-contributed transport intelligence to Biyahe AI Core
-      const querySnapshot = await getDocs(collection(db, "transport_info")).catch(() => ({ docs: [] as any[] }));
-      const userTransportData = querySnapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as TransportInfo));
-      const hasUserData = userTransportData.length > 0;
-
-      // Calculate Neural Grid Optimal Route
-      let neuralGridRoute = null;
-      if (hasUserData) {
-        neuralGridRoute = await Pathfinder.findOptimalRoute(origin, destination, userTransportData);
-      }
-
-      const [transitResult, walkingResult] = await Promise.all([
-        directionsService.current.route({
-          origin,
-          destination,
-          travelMode: google.maps.TravelMode.TRANSIT,
-          provideRouteAlternatives: true
-        }),
-        directionsService.current.route({
-          origin,
-          destination,
-          travelMode: google.maps.TravelMode.WALKING,
-        }).catch(() => null)
-      ]);
-
-      const options: RouteOption[] = [];
-      let addedBiyaheCore = false;
-
-      transitResult.routes.forEach((route, index) => {
-        const leg = route.legs[0];
-        const distanceMeters = leg.distance?.value || 0;
-
-        let type = "Alternative";
-        let fare = 0;
-        let rides = 0;
-        
-        let customInstructions = leg.steps.map(step => {
-          if (step.travel_mode === 'TRANSIT' && step.transit) {
-             rides++;
-             const vehicle = step.transit.line?.vehicle?.type || 'Transit';
-             const line = step.transit.line?.short_name || step.transit.line?.name || '';
-             return `Board ${vehicle} ${line} towards ${step.transit.headsign}`;
-          }
-          return step.instructions.replace(/<[^>]*>?/gm, '');
-        });
-
-        if (index === 0 && hasUserData) {
-          type = "Biyahe AI Core (Optimal)";
-          fare = Math.round(13 + (distanceMeters / 1000) * 1.5);
-          if (rides === 0) rides = 1;
-          const randomTransport = userTransportData[Math.floor(Math.random() * userTransportData.length)];
-          const vehicle = randomTransport?.vehicleType || "Crowdsourced Transport";
-          const routeName = randomTransport?.route || "User Vector";
-          customInstructions = [
-            `[BIYAHE HYBRID AI] Board ${vehicle} via ${routeName}`,
-            `Routing around live traffic & closures using Google Data telemetry.`,
-            ...customInstructions.slice(1)
-          ];
-          addedBiyaheCore = true;
-        } else if (!addedBiyaheCore && index === 0) {
-          type = "Fastest Transit (Google Maps Data)";
-          fare = Math.round(13 + (distanceMeters / 1000) * 2);
-          if (rides === 0) rides = Math.ceil((distanceMeters / 1000) / 4) || 1;
-        } else if (index === 1) {
-          type = "Cheapest Option";
-          fare = Math.round(13 + (distanceMeters / 1000) * 1.5);
-          if (rides === 0) rides = Math.ceil((distanceMeters / 1000) / 3) || 1;
-        } else {
-          type = `Alternative ${index}`;
-          fare = Math.round(15 + (distanceMeters / 1000) * 2.5);
-          if (rides === 0) rides = Math.ceil((distanceMeters / 1000) / 5) || 1;
-        }
-
-        options.push({
-          id: `drive-${index}`,
-          type,
-          rides,
-          fare,
-          duration: leg.duration?.text || "",
-          distance: leg.distance?.text || "",
-          result: transitResult,
-          routeIndex: index,
-          instructions: customInstructions
-        });
-      });
-
-      // Inject Neural Grid Optimal Route if found
-      if (neuralGridRoute && neuralGridRoute.path.length > 2) {
-        const pathCoords = neuralGridRoute.path.map(p => ({ lat: p.node.lat, lng: p.node.lng }));
-        const durationMins = Math.round(neuralGridRoute.totalTime / 60);
-        const distanceKm = neuralGridRoute.totalDistance / 1000;
-
-        // Count actual transit segments
-        const uniqueRoutes = new Set(neuralGridRoute.path.map(p => p.edge?.routeId).filter(Boolean));
-
-        const neuralInstructions = neuralGridRoute.path.map((p, i) => {
-          if (i === 0) return "[BIYAHE AI] Start journey from your location.";
-          if (p.edge?.type === "walk") {
-            return `Walk ${Math.round(p.edge.distance)}m to ${p.node.name || 'next point'}`;
-          }
-          if (p.edge?.type === "transit") {
-            return `Board ${p.edge.vehicleType}: ${p.edge.routeName} towards ${p.node.name}`;
-          }
-          return `Arrive at ${p.node.name}`;
-        });
-
-        options.unshift({
-          id: 'neural-grid-optimal',
-          type: "Biyahe AI Core (Neural Grid)",
-          rides: uniqueRoutes.size,
-          fare: 13 + (uniqueRoutes.size - 1) * 10, // Simple fare model
-          duration: `${durationMins} mins`,
-          distance: `${distanceKm.toFixed(1)} km`,
-          result: null as any,
-          fallbackPath: pathCoords,
-          routeIndex: 0,
-          instructions: [
-            "[NEURAL GRID] Real-time crowdsourced path synchronization active.",
-            ...neuralInstructions,
-            `Optimal efficiency achieved via ${uniqueRoutes.size} connection(s).`
-          ]
-        });
-      }
-
-      if (walkingResult && walkingResult.routes.length > 0) {
-        const route = walkingResult.routes[0];
-        const leg = route.legs[0];
-        options.push({
-          id: 'walk',
-          type: "Just Walk",
-          rides: 0,
-          fare: 0,
-          duration: leg.duration?.text || "",
-          distance: leg.distance?.text || "",
-          result: walkingResult,
-          routeIndex: 0,
-          instructions: leg.steps.map(step => step.instructions.replace(/<[^>]*>?/gm, ''))
-        });
-      }
-
-      setRouteOptions(options);
-
-      if (options.length > 0) {
-        handleSelectRoute(options[0]);
-      }
-      setJourneyStarted(true);
-    } catch (err) {
-      console.warn("AI Routing Failed. Engaging Biyahe Offline Fallback Engine...", err);
-
-      // Fallback routing logic (McRAPTOR Simulated Graph)
-      const fallbackOptions: RouteOption[] = [];
-
-      // Known coords for landmarks to build a fallback path
-      const knownNodes: Record<string, { lat: number; lng: number }> = {
-        "Manila City Hall": { lat: 14.5895, lng: 120.9816 },
-        "UST, España Blvd": { lat: 14.6091, lng: 120.9893 },
-        "SM Makati": { lat: 14.5502, lng: 121.0264 },
-        "Barangay 669": { lat: 14.5786, lng: 120.9848 },
-        "LRT-1 Doroteo Jose": { lat: 14.6054, lng: 120.9822 }
+      const travelMode = routingPreference === 'walk' ? google.maps.TravelMode.WALKING : google.maps.TravelMode.TRANSIT;
+      
+      const request: google.maps.DirectionsRequest = {
+        origin: origin,
+        destination: destination,
+        travelMode: travelMode,
+        transitOptions: travelMode === google.maps.TravelMode.TRANSIT ? {
+          modes: [
+            google.maps.TransitMode.RAIL, 
+            google.maps.TransitMode.SUBWAY, 
+            google.maps.TransitMode.TRAIN,
+            google.maps.TransitMode.BUS
+          ],
+          routingPreference: routingPreference === 'cheapest' 
+            ? google.maps.TransitRoutePreference.LESS_WALKING 
+            : google.maps.TransitRoutePreference.FEWER_TRANSFERS
+        } : undefined,
+        provideRouteAlternatives: true,
       };
 
-      const originCoords = typeof origin === 'string' ? knownNodes[origin as string] || knownNodes["Manila City Hall"] : origin;
-      const destCoords = knownNodes[destination as string] || knownNodes["UST, España Blvd"];
+      googleServices.current.directionsService.route(request, (result, status) => {
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          const options: RouteOption[] = result.routes.map((route, index) => {
+            const leg = route.legs[0];
+            const transitSteps = leg.steps.filter(step => step.travel_mode === google.maps.TravelMode.TRANSIT);
+            
+            const segments: RouteSegment[] = leg.steps.map(step => ({
+              type: step.travel_mode === google.maps.TravelMode.TRANSIT ? 'transit' : 'walk',
+              coordinates: step.path.map(p => [p.lng(), p.lat()])
+            }));
 
-      // Haversine distance
-      const R = 6371; // km
-      const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
-      const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(originCoords.lat * Math.PI / 180) * Math.cos(destCoords.lat * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distanceKm = R * c;
+            let routeType = "Multi-Modal";
+            if (transitSteps.length > 0) {
+              // Extract accurate transit line names (e.g., LRT-1, MRT-3, BEEP)
+              routeType = transitSteps.map(s => {
+                const line = s.transit?.line;
+                return line?.short_name || line?.name || "Transit";
+              }).join(' → ');
+            } else if (travelMode === google.maps.TravelMode.WALKING) {
+              routeType = "Walking Only";
+            }
 
-      const estDurationMins = Math.round((distanceKm / 20) * 60); // Assuming 20km/h average speed in Manila traffic
+            // Accurate ETA from real-time data
+            const arrivalTime = leg.arrival_time ? ` (Arrive ${leg.arrival_time.text})` : "";
+            const durationText = `${leg.duration?.text}${arrivalTime}`;
 
-      fallbackOptions.push({
-        id: 'fallback-1',
-        type: "Biyahe Fallback (Local Graph)",
-        rides: Math.ceil(distanceKm / 4) || 1,
-        fare: Math.round(13 + distanceKm * 2),
-        duration: `${estDurationMins} mins`,
-        distance: `${distanceKm.toFixed(1)} km`,
-        result: null as any,
-        fallbackPath: [originCoords, destCoords], // We can pass the path here to draw it manually
-        routeIndex: 0,
-        instructions: [
-          "[CRITICAL] Google Routes Offline. Biyahe Fallback Engaged.",
-          `Calculated straight-line vector distance: ${distanceKm.toFixed(2)}km`,
-          `Proceed towards coordinates: ${destCoords.lat.toFixed(4)}, ${destCoords.lng.toFixed(4)}`,
-          `Utilize local transit options heading in this general direction.`,
-          `System will auto-reconnect when satellite uplink is restored.`
-        ]
+            return {
+              id: `google-route-${index}`,
+              type: routeType,
+              rides: transitSteps.length,
+              fare: 0, // Google doesn't provide fare for all modes in PH, we keep it 0 or estimate
+              duration: durationText,
+              distance: leg.distance?.text || "",
+              segments: segments,
+              instructions: leg.steps.map(step => {
+                if (step.travel_mode === google.maps.TravelMode.TRANSIT && step.transit) {
+                  const t = step.transit;
+                  return `Board ${t.line.short_name || t.line.name} at ${t.departure_stop.name} toward ${t.headsign}. Alight at ${t.arrival_stop.name}.`;
+                }
+                return step.instructions || "";
+              })
+            };
+          });
+
+          setRouteOptions(options);
+          handleSelectRoute(options[0]);
+          setJourneyStarted(true);
+        } else {
+          console.error("Directions request failed:", status);
+          fallbackToPathfinder(origin);
+        }
+        setLoading(false);
       });
-
-      setRouteOptions(fallbackOptions);
-      if (fallbackOptions.length > 0) {
-        handleSelectRoute(fallbackOptions[0]);
-      }
-      setJourneyStarted(true);
+    } catch (error) {
+      console.error("Routing error:", error);
+      setLoading(false);
     }
-    setLoading(false);
+  };
+
+  const fallbackToPathfinder = async (origin: {lat: number, lng: number}) => {
+    try {
+      const result = await Pathfinder.findOptimalRoute(origin, activeStation);
+
+      if (!result || !result.path || result.path.length < 2) {
+        alert("No route found to that station.");
+        return;
+      }
+
+      const simulatedPath: [number, number][] = result.path.map(p => [p.node.lng, p.node.lat]);
+
+      // Calculate instructions
+      const pathInstructions: string[] = [];
+      let currentTransitRoute = "";
+      
+      result.path.forEach((p, idx) => {
+        if (p.edge?.type === 'walk') {
+          if (idx === 0) pathInstructions.push(`Walk ${Math.round(p.edge.distance)}m to ${p.node.name}`);
+          else if (currentTransitRoute) {
+            pathInstructions.push(`Alight at ${result.path[idx-1].node.name} and walk to ${p.node.name}`);
+            currentTransitRoute = "";
+          }
+        } else if (p.edge?.type === 'transit') {
+          if (p.edge.routeName !== currentTransitRoute) {
+            pathInstructions.push(`Board ${p.edge.vehicleType} (${p.edge.routeName}) at ${result.path[idx-1].node.name}`);
+            currentTransitRoute = p.edge.routeName || "";
+          }
+        }
+      });
+      pathInstructions.push(`Arrive at ${result.path[result.path.length-1].node.name}.`);
+
+      const segments: RouteSegment[] = result.path.map((p, idx) => ({
+        type: p.edge?.type === 'transit' ? 'transit' : 'walk',
+        coordinates: idx === 0 ? [[origin.lng, origin.lat], [p.node.lng, p.node.lat]] : [
+          [result.path[idx-1].node.lng, result.path[idx-1].node.lat],
+          [p.node.lng, p.node.lat]
+        ]
+      }));
+
+      const options: RouteOption[] = [
+        {
+          id: 'biyahe-optimal',
+          type: "Fastest Local Route",
+          rides: result.path.filter(p => p.edge?.type === 'transit').length,
+          fare: 15,
+          duration: `${Math.round(result.totalTime / 60)} mins`,
+          distance: `${(result.totalDistance / 1000).toFixed(1)} km`,
+          segments: segments,
+          instructions: pathInstructions
+        }
+      ];
+
+      setRouteOptions(options);
+      handleSelectRoute(options[0]);
+      setJourneyStarted(true);
+    } catch (error) {
+      console.error("Fallback error:", error);
+      alert("No route found. Please check your destination.");
+    }
+  };
+
+  const startNavigation = () => {
+    setIsNavigating(true);
+    if (mapInstance.current) {
+      mapInstance.current.setZoom(18);
+      mapInstance.current.setPitch(60);
+    }
   };
 
   const analyzeRoute = async () => {
-    if (instructions.length === 0) return;
     setIsAnalyzing(true);
-    setAnalysisResult(null);
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const insights = [
-      "McRAPTOR Scan: Primary artery clear. Marginal delay at intersection.",
-      "Ultra v3.0 Check: Signal patterns suggest optimal efficiency.",
-      "Biyahe Core: High confidence route detected. Safety protocol active.",
-      "Intelligence: Grid parity achieved. Proceed with caution at U-turn."
-    ];
-
+    await new Promise(r => setTimeout(r, 1500));
+    const insights = ["Route analysis complete.", "Traffic is normal. Proceed with current plan.", "Safe route verified. Efficiency: High."];
     setAnalysisResult(insights[Math.floor(Math.random() * insights.length)]);
     setIsAnalyzing(false);
   };
 
   return (
-    <div className="relative min-h-screen bg-[#020617] text-slate-100 font-sans overflow-hidden">
-
-      {/* Grid Pattern Overlay - Reduced opacity for clarity */}
-      <div className="absolute inset-0 z-0 opacity-5 pointer-events-none"
-        style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, #475569 1px, transparent 0)', backgroundSize: '32px 32px' }} />
-
-      {/* Main Map Layer */}
-      <div className={`absolute inset-0 z-0 transition-opacity duration-1000 ${mapLoaded ? 'opacity-100' : 'opacity-0'}`}>
+    <div className="relative h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden flex flex-col">
+      {/* Background Map Layer */}
+      <div className={`absolute inset-0 z-0 transition-opacity duration-1000 ${mapLoaded ? 'opacity-100' : 'opacity-20'}`}>
         <div ref={mapRef} className="h-full w-full" />
-        {/* Removed vignette for maximum clarity */}
       </div>
 
-      {/* Loading State / Error Overlay */}
-      {!mapLoaded && !mapError && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#020617]">
-          <div className="relative">
-            <div className="w-24 h-24 border-2 border-teal-500/20 border-t-teal-500 rounded-full animate-spin" />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-12 h-12 bg-teal-500/20 rounded-full blur-xl animate-pulse" />
+      {/* Tactical Navigation Overlay */}
+      {isNavigating && (
+        <div className="absolute inset-0 pointer-events-none z-20 flex flex-col items-center justify-center">
+          <div 
+            className="w-32 h-32 border-2 border-teal-500/20 rounded-full flex items-center justify-center backdrop-blur-sm bg-teal-500/5 shadow-[0_0_80px_rgba(20,184,166,0.1)] transition-transform duration-500 ease-out"
+            style={{ transform: `rotate(${currentHeading}deg)` }}
+          >
+            <div className="relative">
+              <svg className="w-16 h-16 text-teal-400 filter drop-shadow-[0_0_8px_rgba(45,212,191,0.5)]" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
+              </svg>
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] font-black text-teal-500 tracking-tighter">N</div>
             </div>
           </div>
-          <p className="mt-8 text-teal-400 font-mono text-xs tracking-[0.3em] uppercase animate-pulse">Initializing Commuter Grid...</p>
+          
+          <div className="mt-12 bg-slate-900/90 border border-teal-500/30 px-8 py-5 rounded-[2rem] backdrop-blur-2xl animate-in slide-in-from-bottom-8 duration-700 max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
+              <p className="text-[10px] font-black text-teal-500 uppercase tracking-[0.2em]">Next Maneuver</p>
+            </div>
+            <p className="text-lg font-black text-white leading-tight" dangerouslySetInnerHTML={{ __html: instructions[0] || 'Proceed to destination' }} />
+            <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full bg-teal-500/50 w-1/3 animate-shimmer" />
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setIsNavigating(false)}
+            className="mt-8 pointer-events-auto px-8 py-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all active:scale-95"
+          >
+            Exit Navigation
+          </button>
         </div>
       )}
 
-      {mapError && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-[#020617] p-8 text-center">
-          <div className="w-16 h-16 text-red-500 mb-6">
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          </div>
-          <p className="text-red-400 font-mono text-sm max-w-xs">{mapError}</p>
+      {/* Interface Overlay */}
+      <div className={`relative z-10 flex flex-col h-full pointer-events-none ${isNavigating ? 'hidden' : ''}`}>
+        <div className={`pointer-events-auto transition-all duration-500 ${journeyStarted ? 'hidden md:block' : ''}`}>
+          <TopNav 
+            user={user} 
+            reputation={reputation} 
+            searchQuery={searchQuery} 
+            setSearchQuery={setSearchQuery} 
+            searchInputRef={searchInputRef}
+            handleSignOut={handleSignOut}
+          />
         </div>
-      )}
 
-      {/* UI Interface */}
-      <div className="relative z-20 flex flex-col min-h-screen">
-
-        {/* Superior Header */}
-        <header className="p-4 md:p-6 lg:p-8">
-          <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row items-center gap-6">
-
-            {/* Logo Group */}
-            <div className="flex items-center gap-5">
-              <div className="relative group">
-                <div className="absolute inset-0 bg-teal-500 blur-lg opacity-20 group-hover:opacity-40 transition-opacity" />
-                <div className="relative bg-slate-900 border border-teal-500/30 p-3 rounded-2xl">
-                  <svg className="w-7 h-7 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                </div>
-              </div>
-              <div className="flex flex-col">
-                <h1 className="text-3xl font-black tracking-tighter leading-none bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">BIYAHE</h1>
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-                  <p className="text-[10px] text-teal-400 font-mono font-bold tracking-widest uppercase">System Operational</p>
-                </div>
-              </div>
+        <main className="flex-1 p-2 pb-4 md:p-8 flex flex-col overflow-hidden min-h-0">
+          <div className="max-w-screen-2xl mx-auto w-full h-full flex flex-col lg:flex-row gap-4 md:gap-8 items-end justify-end lg:justify-start pointer-events-none min-h-0">
+            <div className="pointer-events-auto w-full lg:w-auto flex flex-col justify-end h-full min-h-0">
+              <RoutingPanel 
+                activeStation={activeStation}
+                journeyStarted={journeyStarted}
+                routeOptions={routeOptions}
+                selectedRoute={selectedRoute}
+                handleSelectRoute={handleSelectRoute}
+                calculateRoute={calculateRoute}
+                setJourneyStarted={setJourneyStarted}
+                travelInfo={travelInfo}
+                instructions={instructions}
+                analyzeRoute={analyzeRoute}
+                isAnalyzing={isAnalyzing}
+                analysisResult={analysisResult}
+                loading={loading}
+                routingPreference={routingPreference}
+                setRoutingPreference={setRoutingPreference}
+                startNavigation={(!isNavigating && journeyStarted) ? startNavigation : undefined}
+              />
             </div>
-
-            {/* Smart Search */}
-            <div className="flex-1 w-full max-w-2xl relative group">
-              <div className="relative bg-slate-900 border border-white/10 rounded-2xl px-5 py-3.5 flex items-center gap-4 group-focus-within:border-teal-500 transition-all shadow-2xl">
-                <svg className="w-5 h-5 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Where are you commuting to? (Terminal, Station, Landmark...)"
-                  className="bg-transparent text-sm w-full outline-none placeholder:text-slate-500 font-medium"
-                />
-                <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-1 bg-white/5 border border-white/10 rounded text-[10px] text-slate-500 font-mono">
-                  ⌘ K
-                </kbd>
-              </div>
-            </div>
-
-            {/* User Interface */}
-            <div className="flex items-center gap-4">
-              {!user ? (
-                <div className="flex items-center gap-3">
-                  <Link href="/auth/signin" className="px-5 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors">Log In</Link>
-                  <Link href="/auth/signup" className="px-6 py-2.5 bg-teal-500 hover:bg-teal-400 text-slate-950 text-sm font-black rounded-xl transition-all shadow-lg shadow-teal-500/20 active:scale-95">Infiltrate</Link>
+            
+            {/* System Status */}
+            <div className="hidden lg:grid grid-cols-2 xl:grid-cols-4 gap-4 flex-1 pointer-events-auto">
+              {[
+                { label: 'Transit Points', val: '12.8k', trend: '+12%' },
+                { label: 'Active Contributions', val: '842', trend: '+5%' },
+                { label: 'Response Time', val: '24ms', trend: '-2ms' },
+                { label: 'Server Load', val: '14.2%', trend: 'Normal' },
+              ].map((stat, i) => (
+                <div key={i} className="glass-card-teal p-6 group cursor-crosshair">
+                  <div className="flex justify-between items-start mb-3">
+                    <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</p>
+                    <span className="text-[8px] font-mono text-teal-500/60">{stat.trend}</span>
+                  </div>
+                  <p className="text-2xl font-black text-teal-400 group-hover:scale-110 transition-transform origin-left">{stat.val}</p>
                 </div>
-              ) : (
-                <div className="flex items-center gap-5 bg-slate-900 border border-white/5 px-4 py-2 rounded-2xl">
-                  {user.email === "princedalelimosnero@gmail.com" && (
-                    <Link href="/admin" className="text-xs font-black text-indigo-400 hover:text-indigo-300 transition-colors uppercase tracking-widest border border-indigo-500/30 px-3 py-1.5 rounded-xl bg-indigo-500/10 shadow-lg shadow-indigo-500/10">
-                      Root Admin
-                    </Link>
-                  )}
-                  <div className="flex flex-col items-end">
-                    <p className="text-[10px] font-mono text-slate-500 uppercase">Trust Index</p>
-                    <p className="text-xs font-black text-teal-400">{reputation.toFixed(1)}%</p>
-                  </div>
-                  <div className="w-px h-8 bg-white/10" />
-                  <button onClick={handleSignOut} className="relative group">
-                    <div className="w-10 h-10 rounded-xl border border-teal-500/30 overflow-hidden group-hover:border-teal-400 transition-all">
-                      <Image
-                        src={user.photoURL || "https://api.dicebear.com/7.x/avataaars/svg?seed=juan"}
-                        width={40} height={40} alt="Avatar"
-                        className="group-hover:scale-110 transition-transform"
-                      />
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-teal-500 border-2 border-[#020617] rounded-full" />
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* Dynamic Panel System */}
-        <main className="flex-1 p-4 md:p-8 flex flex-col justify-end">
-          <div className="max-w-screen-2xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8 items-end">
-
-            {/* Primary Action Core */}
-            <div className="lg:col-span-4 group">
-              <div className="backdrop-blur-3xl bg-slate-900/80 border border-white/10 rounded-[2.5rem] p-8 shadow-2xl transition-all duration-500 group-hover:border-teal-500/30 group-hover:translate-y-[-4px]">
-
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <p className="text-[10px] font-black text-teal-500 uppercase tracking-[0.2em] mb-2">Selected Node</p>
-                    <h2 className="text-3xl font-black leading-tight text-white">{activeStation}</h2>
-                  </div>
-                  <div className="bg-teal-500/10 p-3 rounded-2xl border border-teal-500/20">
-                    <svg className="w-5 h-5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>
-                  </div>
-                </div>
-
-                {journeyStarted && routeOptions.length > 0 ? (
-                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
-                    {/* Route Options Carousel */}
-                    <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar snap-x">
-                      {routeOptions.map((opt) => (
-                        <button
-                          key={opt.id}
-                          onClick={() => handleSelectRoute(opt)}
-                          className={`snap-start flex-shrink-0 flex flex-col items-start p-4 rounded-2xl border transition-all text-left min-w-[160px] active:scale-95 ${selectedRoute?.id === opt.id
-                              ? 'bg-teal-500/20 border-teal-500'
-                              : 'bg-white/5 border-white/10 hover:bg-white/10'
-                            }`}
-                        >
-                          <p className={`text-[10px] font-black uppercase mb-1 ${selectedRoute?.id === opt.id ? 'text-teal-400' : 'text-slate-400'}`}>
-                            {opt.type}
-                          </p>
-                          <p className="text-lg font-black text-white">{opt.duration}</p>
-                          <div className="flex items-center gap-2 mt-2 text-xs text-slate-400 font-medium">
-                            <span>₱{opt.fare}</span>
-                            <span>•</span>
-                            <span>{opt.rides} {opt.rides === 1 ? 'ride' : 'rides'}</span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Vector</p>
-                        <p className="text-lg font-black text-teal-400">{travelInfo.distance}</p>
-                      </div>
-                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Time Loop</p>
-                        <p className="text-lg font-black text-teal-400">{travelInfo.duration}</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-950/50 rounded-3xl p-5 max-h-64 overflow-y-auto custom-scrollbar border border-white/5">
-                      <div className="space-y-5">
-                        {instructions.map((step, i) => (
-                          <div key={i} className="flex gap-4 items-start group/step">
-                            <div className="w-6 h-6 rounded-lg bg-teal-500/10 border border-teal-500/30 flex-shrink-0 flex items-center justify-center text-[10px] font-black text-teal-400 group-hover/step:bg-teal-500 group-hover/step:text-slate-950 transition-all">
-                              {i + 1}
-                            </div>
-                            <p className="text-xs text-slate-400 leading-relaxed group-hover/step:text-slate-100 transition-colors">{step}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setJourneyStarted(false)}
-                        className="flex-1 py-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
-                      >
-                        Abort Route
-                      </button>
-                      <button
-                        onClick={analyzeRoute}
-                        disabled={isAnalyzing}
-                        className="px-6 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-2xl flex items-center justify-center transition-all active:scale-95 disabled:opacity-50"
-                      >
-                        {isAnalyzing ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.364-5.636l-.707-.707M6.342 16.126a7.5 7.5 0 1111.316 0l.243.517a.5.5 0 01-.456.702H6.555a.5.5 0 01-.456-.702l.243-.517z" /></svg>}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-8 animate-in fade-in duration-700">
-                    <p className="text-sm text-slate-400 leading-relaxed">
-                      Deploying high-precision multi-modal routing algorithms. Accessing real-time transit telemetry across the Metro Manila sector.
-                    </p>
-                    <button
-                      onClick={calculateRoute}
-                      disabled={loading}
-                      className="w-full py-5 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] transition-all shadow-2xl shadow-teal-500/20 active:scale-[0.98] flex items-center justify-center gap-3"
-                    >
-                      {loading ? (
-                        <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                          Engage Pulse Route
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {/* AI Insights Layer */}
-                {analysisResult && (
-                  <div className="mt-6 p-5 bg-teal-500/10 border border-teal-500/30 rounded-3xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-teal-500 to-transparent animate-shimmer" />
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-                      <span className="text-[10px] font-black uppercase text-teal-400 tracking-widest">McRAPTOR Intelligence</span>
-                    </div>
-                    <p className="text-xs text-white/90 italic leading-relaxed">"{analysisResult}"</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Tactical Grid Metrics */}
-            <div className="lg:col-span-8">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Network Nodes', val: '12.8k', trend: '+12%', color: 'text-teal-400' },
-                  { label: 'Active Commits', val: '842', trend: '+5%', color: 'text-blue-400' },
-                  { label: 'Grid Latency', val: '24ms', trend: '-2ms', color: 'text-teal-400' },
-                  { label: 'System Load', val: '14.2%', trend: 'Nominal', color: 'text-teal-400' },
-                ].map((stat, i) => (
-                  <div key={i} className="backdrop-blur-3xl bg-slate-900/40 border border-white/5 p-6 rounded-[2rem] hover:border-teal-500/40 transition-all cursor-crosshair group">
-                    <div className="flex justify-between items-start mb-3">
-                      <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</p>
-                      <span className="text-[8px] font-mono text-teal-500/60">{stat.trend}</span>
-                    </div>
-                    <p className={`text-2xl font-black ${stat.color} group-hover:scale-110 transition-transform origin-left`}>{stat.val}</p>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
         </main>
 
-        {/* Neural Navigation System */}
-        <nav className="p-6 md:p-8 flex justify-center">
-          <div className="bg-slate-900/80 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-2 flex items-center gap-1 shadow-2xl">
-            <NavItem icon="explore" label="Grid" active />
-            <NavItem icon="routes" label="Pulse" />
-            <Link href="/contribute">
-              <div className="mx-2 p-4 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-full transition-all active:scale-90 shadow-lg shadow-teal-500/20">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" /></svg>
-              </div>
-            </Link>
-            <Link href="/rewards">
-              <NavItem icon="rewards" label="Rewards" />
-            </Link>
-            <NavItem icon="more" label="Core" />
-          </div>
-        </nav>
+        <div className="pointer-events-auto">
+          <BottomNav activeTab="Map" />
+        </div>
       </div>
 
       <style jsx global>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Outfit:wght@400;700;900&display=swap');
-        
-        :root {
-          --font-inter: 'Inter', sans-serif;
-          --font-outfit: 'Outfit', sans-serif;
-        }
-
-        body {
-          background: #020617;
-          font-family: var(--font-inter);
-        }
-
-        h1, h2, h3, button {
-          font-family: var(--font-outfit);
-        }
-
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(45, 212, 191, 0.2);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(45, 212, 191, 0.4);
-        }
-
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-shimmer {
-          animation: shimmer 2s infinite linear;
-        }
-
-        /* Google Places Tactical UI */
-        .pac-container {
-          background-color: #0f172a !important;
-          border: 1px solid rgba(45, 212, 191, 0.2) !important;
-          border-radius: 20px !important;
-          margin-top: 12px !important;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-          padding: 10px !important;
-          font-family: var(--font-inter) !important;
-        }
-        .pac-item {
-          border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
-          padding: 12px 16px !important;
-          color: #94a3b8 !important;
-          cursor: pointer !important;
-          border-radius: 12px !important;
-          transition: all 0.2s !important;
-        }
-        .pac-item:hover {
-          background-color: rgba(45, 212, 191, 0.1) !important;
-          color: white !important;
-          border-radius: 12px !important;
-        }
-        .pac-item-query {
-          color: #f1f5f9 !important;
-          font-size: 14px !important;
-        }
-        .pac-matched {
-          color: #2dd4bf !important;
-        }
-        .pac-icon {
-          filter: invert(1) brightness(2) !important;
-        }
       `}</style>
-    </div>
-  );
-}
-
-function NavItem({ icon, label, active = false }: { icon: string; label: string; active?: boolean }) {
-  return (
-    <div className={`flex flex-col items-center gap-1.5 px-6 py-3 rounded-[2rem] transition-all cursor-pointer group ${active ? 'bg-teal-500/10 text-teal-400' : 'text-slate-500 hover:text-white'}`}>
-      <div className="relative">
-        {active && <div className="absolute inset-0 bg-teal-500 blur-md opacity-40 animate-pulse" />}
-        <svg className="relative w-5 h-5 group-active:scale-90 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          {icon === 'explore' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />}
-          {icon === 'routes' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />}
-          {icon === 'saved' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />}
-          {icon === 'rewards' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
-          {icon === 'more' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16m-7 6h7" />}
-        </svg>
-      </div>
-      <span className="text-[9px] font-black uppercase tracking-[0.2em]">{label}</span>
     </div>
   );
 }

@@ -28,7 +28,8 @@ graph TD
         Auth["Firebase Auth"]
         Koffi["Koffi FFI Bridge"]
         Stellar["Soroban SDK (Payments)"]
-        class API,Auth,Koffi,Stellar backend;
+        Gemini["Gemini AI (Chatbot)"]
+        class API,Auth,Koffi,Stellar,Gemini backend;
     end
 
     subgraph "Intelligence Core (C++ Engine)"
@@ -241,3 +242,4 @@ Refer to the internal [Installation Guide](docs/INSTALL.md) to compile the C++ s
 
 ---
 *Biyahe: Mapping the chaos of Manila, one node at a time.*
+Manila, one node at a time.*

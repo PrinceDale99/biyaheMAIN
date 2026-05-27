@@ -80,9 +80,16 @@ export class Pathfinder {
 
     nodes.set("origin", { id: "origin", ...origin, name: "Current Location", type: "origin" });
     
-    let destCoords: { lat: number; lng: number };
+    let destCoords: { lat: number; lng: number } = { lat: 14.6091, lng: 120.9893 }; // Default (Manila)
     if (typeof destination === 'string') {
-      destCoords = { lat: 14.6091, lng: 120.9893 }; // Default
+      // Try to find a waypoint with a matching name
+      for (const route of transportData) {
+        const wp = route.waypoints.find(w => w.name.toLowerCase().includes(destination.toLowerCase()));
+        if (wp) {
+          destCoords = { lat: wp.lat, lng: wp.lng };
+          break;
+        }
+      }
     } else {
       destCoords = destination;
     }

@@ -9,10 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@googlemaps/js-api-loader": "^1.16.2",
+    "@albedo-link/intent": "^0.13.0",
+    "@google/generative-ai": "^0.24.1",
+    "@googlemaps/js-api-loader": "^2.0.2",
+    "@stellar/freighter-api": "^6.0.1",
     "@stellar/stellar-sdk": "^15.0.1",
+    "@types/mapbox-gl": "^3.4.1",
+    "@walletconnect/sign-client": "^2.23.9",
+    "@walletconnect/types": "^2.23.9",
+    "@walletconnect/utils": "^2.23.9",
     "firebase": "^12.12.1",
     "koffi": "^2.16.1",
+    "mapbox-gl": "^3.24.0",
     "next": "16.2.4",
     "openai": "^6.35.0",
     "react": "19.2.4",
@@ -20,7 +28,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/google.maps": "^3.64.0",
+    "@types/google.maps": "^3.64.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

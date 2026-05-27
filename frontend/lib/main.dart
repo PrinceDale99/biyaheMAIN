@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:biyahe_app/screens/navigation_screen.dart';
 
 // PRODUCTION READY: Centralized Theme & Constants
 class BiyaheTheme {
@@ -175,7 +176,19 @@ class _BiyaheHomeScreenState extends State<BiheHomeScreen> {
                   ),
                   const Spacer(),
                   ElevatedButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => const NavigationScreen(
+                            coordinates: [
+                              [120.9842, 14.5995],
+                              [120.9850, 14.6010],
+                              [120.9865, 14.6030],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: BiyaheTheme.primary,
                       foregroundColor: Colors.white,

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No rewards available to claim' }, { status: 400 });
     }
 
-    const rewardAmount = Math.floor(claimablePoints * 10);
+    const rewardAmount = parseFloat((claimablePoints * 0.1).toFixed(7)); // 10 points = 1 XLM
 
     const stellarResult = await StellarRewards.rewardContributor(stellarAddress, rewardAmount);
 
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       success: true,
       amount: rewardAmount,
       txHash: stellarResult.hash,
-      message: `Successfully claimed ${rewardAmount} $BIYAHE tokens.`
+      message: `Successfully claimed ${rewardAmount} XLM.`
     });
 
   } catch (error: any) {

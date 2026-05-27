@@ -48,3 +48,5 @@ Thumbs.db
 google-cloud-sdk-installer.exe
 google-services.json
 local.properties
+
+Soroban/target/
