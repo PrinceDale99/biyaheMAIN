@@ -191,22 +191,23 @@ export class Pathfinder {
           if (node.type === "stairs" || otherNode.type === "stairs") speed = this.getAvgSpeed("stairs");
           if (node.type === "footbridge" || otherNode.type === "footbridge") {
             speed = this.getAvgSpeed("footbridge");
-            safety = 0.9; // Footbridges are safer than roads
+            safety = 1.0; // Maximum safety
           }
           if (node.type === "overpass" || otherNode.type === "overpass") {
             speed = this.getAvgSpeed("overpass");
-            safety = 0.95;
+            safety = 1.0;
           }
-          if (node.type === "pedestrian_lane" || otherNode.type === "pedestrian_lane") safety = 0.8;
+          if (node.type === "pedestrian_lane" || otherNode.type === "pedestrian_lane") safety = 0.9;
 
           const baseWeight = dist / speed;
-          // Apply safety penalty: less safe routes feel "longer"
-          const safetyPenalty = (1 - safety) * 120; // Up to 2 mins penalty for unsafe routes
+          // Drastic safety penalty: non-safe routes are heavily discouraged.
+          // Unsafe routes (safety <= 0.5) get a massive time penalty.
+          const safetyPenalty = safety >= 0.9 ? 0 : (1.0 - safety) * 600; // Up to 10 mins penalty for unsafe routes
           
           edges.push({
             from: node.id,
             to: otherNode.id,
-            weight: baseWeight + safetyPenalty + 60, // 1 min fixed transfer overhead
+            weight: baseWeight + safetyPenalty + 30, // 30s transfer overhead
             distance: dist,
             type: "walk",
             pedestrianSafety: safety

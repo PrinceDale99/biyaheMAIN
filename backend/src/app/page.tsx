@@ -705,7 +705,8 @@ export default function Home() {
           duration: r.duration,
           distance: r.distance,
           fare: r.fare,
-          rides: r.rides
+          rides: r.rides,
+          instructions: r.instructions
         })),
         activeStation,
         routingPreference

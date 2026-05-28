@@ -40,15 +40,37 @@ export async function POST(request: Request) {
     const { messages } = await request.json();
     
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.5-flash',
       tools: tools,
+      systemInstruction: {
+        role: 'system',
+        parts: [{
+          text: `You are a high-precision tactical transit assistant for Metro Manila. 
+          Your goal is to provide specific, actionable, and advanced advice for commuters with a STRICT SAFETY-FIRST mandate. 
+          PRIORITIZE PEDESTRIAN INFRASTRUCTURE: Always direct users to use footbridges, overpasses, and pedestrian lanes. 
+          STRICT ROAD WARNING: Explicitly warn users NOT to walk on the road if a safe structure is available. Only allow road-side walking if NO other path exists.
+          Use spatial language (e.g., "Northbound platform," "Exit 2 towards the landmark"). 
+          Factor in local context like train congestion, weather, and safety. 
+          When providing directions, be specific about distances and maneuvers (e.g., "In 200m, take the footbridge to cross safely").
+          Keep your tone direct, helpful, and authoritative.`
+        }]
+      }
     });
 
+    // Filter history to ensure it starts with a 'user' role
+    // Gemini requires the first message in history to be 'user'
+    let history = messages.slice(0, -1).map((m: any) => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }],
+    }));
+
+    // If history starts with 'model', remove it (it's likely the initial greeting)
+    if (history.length > 0 && history[0].role === 'model') {
+      history.shift();
+    }
+
     const chat = model.startChat({
-      history: messages.slice(0, -1).map((m: any) => ({
-        role: m.role === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content }],
-      })),
+      history: history,
     });
 
     const lastMessage = messages[messages.length - 1].content;

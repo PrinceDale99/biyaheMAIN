@@ -7,24 +7,23 @@ export async function POST(request: Request) {
   try {
     const { routes, destination, preferences } = await request.json();
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
     const prompt = `
-      You are an expert urban transit analyst for Metro Manila. 
-      Analyze the following route options to ${destination} and recommend the absolute best one based on user preferences: ${preferences}.
+      You are a high-precision tactical transit navigator for Metro Manila. 
+      Analyze the following detailed route options to ${destination} and provide an ADVANCED, SPECIFIC tactical briefing for the absolute best one based on user preference: ${preferences}.
       
-      Route Options:
+      Route Data (including step-by-step instructions):
       ${JSON.stringify(routes, null, 2)}
 
-      Consider factors like:
-      - Total travel time and reliability.
-      - Number of transfers (fewer is usually better).
-      - Cost efficiency.
-      - Pedestrian infrastructure (use of footbridges/overpasses is safer).
-      - Local Metro Manila context (jeepney availability, train congestion).
+      Your briefing must be highly specific and include:
+      1. SAFETY FIRST: Prioritize routes using pedestrian infrastructure (footbridges, overpasses, pedestrian lanes). EXPLICITLY warn the user NOT to walk on the road if a safe structure is nearby.
+      2. EXACT MANEUVERS: Use precise tactical language (e.g., "In 150m, take the footbridge," "Head North for 200m using the sidewalk then cross via the overpass").
+      3. TRANSIT SPECIFICS: Detail exactly which train/bus to board, which platform/entrance to use, and where to alight.
+      4. METRO MANILA CONTEXT: Factor in real-world local conditions like "Avoid the crowded MRT-3 Northbound stairs," or "Use the footbridge to cross EDSA safely."
+      5. TACTICAL ADVANTAGE: Explain how this route maximizes pedestrian safety while maintaining efficiency.
 
-      Provide a concise, tactical recommendation in 2-3 sentences. Explain WHY this route is better than the others.
-      Keep the tone professional and helpful.
+      If a route requires walking, always direct the user to the nearest PEDESTRIAN LANE or FOOTBRIDGE. Only allow walking on the side of the road if NO pedestrian infrastructure exists.
     `;
 
     const result = await model.generateContent(prompt);
