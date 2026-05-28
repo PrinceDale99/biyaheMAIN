@@ -269,26 +269,20 @@ export default function Home() {
 
   const updateChaseCam = (lngLat: [number, number], heading: number) => {
     if (!mapInstance.current) return;
-    setCurrentHeading(heading);
     
-    // Low-level camera control for 3D navigation feel
-    const camera = mapInstance.current.getFreeCameraOptions();
+    // Smoothly update the arrow heading to prevent jitter
+    setCurrentHeading((prev) => {
+      let diff = heading - prev;
+      diff = ((diff + 180) % 360 + 360) % 360 - 180;
+      return prev + (diff * 0.2); // Smooth lerp
+    });
 
-    // Position camera behind user based on heading
-    const rad = (heading || 0) * (Math.PI / 180);
-    const offset = 0.0008; // slightly closer for better detail
-    const camLng = lngLat[0] - Math.sin(rad) * offset;
-    const camLat = lngLat[1] - Math.cos(rad) * offset;
-    
-    camera.position = mapboxgl.MercatorCoordinate.fromLngLat(
-      [camLng, camLat],
-      120 // altitude in meters, lower for more immersive 3D
-    );
-
-    camera.lookAtPoint(lngLat);
-    
-    // Apply camera options
-    mapInstance.current.setFreeCameraOptions(camera);
+    // Smoothly pan the map to follow the user without forcefully snapping bearing/pitch
+    mapInstance.current.easeTo({
+      center: lngLat,
+      duration: 1000,
+      easing: (t) => t
+    });
   };
 
   const handleSignOut = async () => {
