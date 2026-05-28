@@ -768,36 +768,96 @@ export default function Home() {
 
       {/* Tactical Navigation Overlay */}
       {isNavigating && (
-        <div className="absolute inset-0 pointer-events-none z-20 flex flex-col items-center justify-center">
-          <div 
-            className="w-32 h-32 border-2 border-teal-500/20 rounded-full flex items-center justify-center backdrop-blur-sm bg-teal-500/5 shadow-[0_0_80px_rgba(20,184,166,0.1)] transition-transform duration-500 ease-out"
-            style={{ transform: `rotate(${currentHeading}deg)` }}
-          >
-            <div className="relative">
-              <svg className="w-16 h-16 text-teal-400 filter drop-shadow-[0_0_8px_rgba(45,212,191,0.5)]" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
-              </svg>
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] font-black text-teal-500 tracking-tighter">N</div>
-            </div>
-          </div>
+        <div className="absolute inset-0 pointer-events-none z-20">
           
-          <div className="mt-12 bg-slate-900/90 border border-teal-500/30 px-8 py-5 rounded-[2rem] backdrop-blur-2xl animate-in slide-in-from-bottom-8 duration-700 max-w-md mx-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-2 h-2 rounded-full bg-teal-500 animate-ping" />
-              <p className="text-[10px] font-black text-teal-500 uppercase tracking-[0.2em]">Next Maneuver</p>
+          {/* Desktop Top Bar */}
+          <div className="hidden md:flex absolute top-8 left-6 right-6 justify-between items-start">
+            <div className="w-1/3"></div>
+            <div className="w-1/3 flex justify-center">
+              <span className="text-teal-400 font-black tracking-widest text-xs uppercase bg-slate-900/80 px-5 py-2 rounded-full backdrop-blur-md border border-teal-500/30 shadow-lg">THE 3D ARROW GUIDE</span>
             </div>
-            <p className="text-lg font-black text-white leading-tight" dangerouslySetInnerHTML={{ __html: instructions[0] || 'Proceed to destination' }} />
-            <div className="mt-4 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-              <div className="h-full bg-teal-500/50 w-1/3 animate-shimmer" />
+            <div className="w-1/3 flex justify-end pointer-events-auto">
+              <button 
+                onClick={() => setIsNavigating(false)}
+                className="px-6 py-2.5 bg-slate-900/90 border-2 border-white text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-black transition-all active:scale-95 shadow-xl"
+              >
+                CANCEL
+              </button>
             </div>
           </div>
 
-          <button 
-            onClick={() => setIsNavigating(false)}
-            className="mt-8 pointer-events-auto px-8 py-3 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all active:scale-95"
-          >
-            Exit Navigation
-          </button>
+          {/* Mobile Top Bar */}
+          <div className="md:hidden absolute top-4 left-4 right-4 flex flex-col gap-3">
+            <div className="relative bg-slate-900/95 border border-teal-500/30 rounded-[2rem] p-5 backdrop-blur-xl shadow-2xl flex flex-col items-center justify-center pointer-events-auto">
+              <p className="text-white font-black text-xl text-center">
+                {travelInfo.distance} left, ETA {travelInfo.duration}
+              </p>
+              <button 
+                onClick={() => setIsNavigating(false)}
+                className="absolute -top-2 -right-2 w-10 h-10 bg-slate-900 rounded-full flex items-center justify-center text-white border-2 border-slate-700 shadow-xl hover:bg-red-500 transition-colors active:scale-95"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="pl-3">
+              <span className="text-slate-300 font-black tracking-widest text-[10px] uppercase leading-snug flex flex-col drop-shadow-md">
+                <span>The 3D</span>
+                <span>Arrow</span>
+                <span>Guide</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Center Compass Arrow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <div 
+              className="w-32 h-32 border-2 border-teal-500/20 rounded-full flex items-center justify-center backdrop-blur-sm bg-teal-500/5 shadow-[0_0_80px_rgba(20,184,166,0.1)] transition-transform duration-500 ease-out"
+              style={{ transform: `rotate(${currentHeading}deg)` }}
+            >
+              <div className="relative">
+                <svg className="w-16 h-16 text-teal-400 filter drop-shadow-[0_0_8px_rgba(45,212,191,0.5)]" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z" />
+                </svg>
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[10px] font-black text-teal-500 tracking-tighter">N</div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Desktop Bottom Bar */}
+          <div className="hidden md:flex absolute bottom-10 left-6 right-6 justify-between items-end">
+            <div className="w-1/3"></div>
+            <div className="w-1/3 flex justify-center pointer-events-auto">
+              <div className="bg-slate-900/90 border border-teal-500/30 px-6 py-4 rounded-3xl backdrop-blur-2xl max-w-md w-full text-center shadow-2xl">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-ping" />
+                  <span className="text-[9px] font-black text-teal-500 uppercase tracking-[0.2em]">Next Maneuver</span>
+                </div>
+                <p className="text-base font-black text-white leading-tight" dangerouslySetInnerHTML={{ __html: instructions[0] || 'Proceed to destination' }} />
+              </div>
+            </div>
+            <div className="w-1/3 flex justify-end pb-2">
+              <div className="text-right bg-slate-900/80 border border-white/10 px-5 py-3 rounded-xl backdrop-blur-md shadow-xl">
+                <p className="text-white font-black text-base">
+                  {travelInfo.distance} left
+                </p>
+                <p className="text-teal-400 font-bold text-xs uppercase tracking-wider mt-0.5">
+                  ETA {travelInfo.duration}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile Bottom Bar */}
+          <div className="md:hidden absolute bottom-6 left-4 right-4 flex justify-center pointer-events-auto">
+            <div className="bg-slate-900/95 border border-teal-500/30 px-6 py-6 rounded-[2rem] backdrop-blur-xl w-full text-center shadow-2xl">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-ping" />
+                <span className="text-[9px] font-black text-teal-500 uppercase tracking-[0.2em]">Next Maneuver</span>
+              </div>
+              <p className="text-xl md:text-2xl font-black text-white leading-tight" dangerouslySetInnerHTML={{ __html: instructions[0] || 'Proceed to destination' }} />
+            </div>
+          </div>
+
         </div>
       )}
 
