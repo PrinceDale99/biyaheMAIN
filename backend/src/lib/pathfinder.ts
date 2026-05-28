@@ -38,7 +38,9 @@ export interface PathEdge {
   routeId?: string;
   routeName?: string;
   vehicleType?: string;
-  pedestrianSafety?: number; // 0 to 1, where 1 is safest
+  pedestrianSafety?: number; // 0 to 1
+  comfort?: number; // 0 to 1
+  reliability?: number; // 0 to 1
 }
 
 export class Pathfinder {
@@ -53,19 +55,19 @@ export class Pathfinder {
     return R * c;
   }
 
-  private static getAvgSpeed(type: string): number {
+  private static getTacticalMetrics(type: string): { speed: number, comfort: number, reliability: number } {
     switch (type.toLowerCase()) {
-      case "jeep": return 15 / 3.6; // 15 km/h -> m/s
-      case "uv express": return 25 / 3.6;
-      case "bus": return 20 / 3.6;
-      case "lrt/mrt": return 35 / 3.6;
-      case "trike": return 12 / 3.6;
-      case "walk": return 4 / 3.6; // 4 km/h
-      case "stairs": return 1.5 / 3.6; // Much slower
-      case "footbridge": return 3.5 / 3.6; 
-      case "overpass": return 3 / 3.6; // Slower due to elevation
-      case "pedestrian_lane": return 4 / 3.6;
-      default: return 15 / 3.6;
+      case "lrt/mrt": return { speed: 35 / 3.6, comfort: 0.8, reliability: 0.95 };
+      case "bus": return { speed: 20 / 3.6, comfort: 0.6, reliability: 0.7 };
+      case "uv express": return { speed: 25 / 3.6, comfort: 0.7, reliability: 0.8 };
+      case "jeep": return { speed: 15 / 3.6, comfort: 0.3, reliability: 0.6 };
+      case "trike": return { speed: 12 / 3.6, comfort: 0.2, reliability: 0.5 };
+      case "walk": return { speed: 4 / 3.6, comfort: 0.4, reliability: 1.0 };
+      case "stairs": return { speed: 1.5 / 3.6, comfort: 0.1, reliability: 1.0 };
+      case "footbridge": return { speed: 3.5 / 3.6, comfort: 0.5, reliability: 1.0 };
+      case "overpass": return { speed: 3 / 3.6, comfort: 0.4, reliability: 1.0 };
+      case "pedestrian_lane": return { speed: 4 / 3.6, comfort: 0.5, reliability: 1.0 };
+      default: return { speed: 15 / 3.6, comfort: 0.5, reliability: 0.7 };
     }
   }
 
@@ -115,28 +117,32 @@ export class Pathfinder {
         if (idx > 0) {
           const prevNodeId = `${route.id}-wp-${idx - 1}`;
           const dist = this.haversine(route.waypoints[idx - 1].lat, route.waypoints[idx - 1].lng, wp.lat, wp.lng);
-          const speed = this.getAvgSpeed(route.transportType);
+          const metrics = this.getTacticalMetrics(route.transportType);
           
           edges.push({
             from: prevNodeId,
             to: nodeId,
-            weight: dist / speed,
+            weight: dist / metrics.speed,
             distance: dist,
             type: "transit",
             routeId: route.id,
             routeName: route.routeName,
-            vehicleType: route.transportType
+            vehicleType: route.transportType,
+            comfort: metrics.comfort,
+            reliability: metrics.reliability
           });
 
           edges.push({
             from: nodeId,
             to: prevNodeId,
-            weight: dist / speed,
+            weight: dist / metrics.speed,
             distance: dist,
             type: "transit",
             routeId: route.id,
             routeName: route.routeName,
-            vehicleType: route.transportType
+            vehicleType: route.transportType,
+            comfort: metrics.comfort,
+            reliability: metrics.reliability
           });
         }
       });
@@ -150,16 +156,20 @@ export class Pathfinder {
       const MAX_WALK_TO_TRANSIT = 2000;
       const MAX_WALK_TRANSFER = 400;
 
+      const walkMetrics = this.getTacticalMetrics("walk");
+
       if (node.type === "pickup" || node.type === "both") {
         const dist = this.haversine(origin.lat, origin.lng, node.lat, node.lng);
         if (dist < MAX_WALK_TO_TRANSIT) {
           edges.push({
             from: "origin",
             to: node.id,
-            weight: dist / this.getAvgSpeed("walk"),
+            weight: dist / walkMetrics.speed,
             distance: dist,
             type: "walk",
-            pedestrianSafety: 0.5 // Default unknown safety
+            pedestrianSafety: 0.8,
+            comfort: walkMetrics.comfort,
+            reliability: walkMetrics.reliability
           });
         }
       }
@@ -170,10 +180,12 @@ export class Pathfinder {
           edges.push({
             from: node.id,
             to: "destination",
-            weight: dist / this.getAvgSpeed("walk"),
+            weight: dist / walkMetrics.speed,
             distance: dist,
             type: "walk",
-            pedestrianSafety: 0.5
+            pedestrianSafety: 0.8,
+            comfort: walkMetrics.comfort,
+            reliability: walkMetrics.reliability
           });
         }
       }
@@ -185,32 +197,33 @@ export class Pathfinder {
         const dist = this.haversine(node.lat, node.lng, otherNode.lat, otherNode.lng);
         if (dist < MAX_WALK_TRANSFER) {
           // Calculate speed based on infrastructure type
-          let speed = this.getAvgSpeed("walk");
-          let safety = 0.5;
+          let metrics = this.getTacticalMetrics("walk");
+          let safety = 0.8; // Assume sidewalks are generally available
 
-          if (node.type === "stairs" || otherNode.type === "stairs") speed = this.getAvgSpeed("stairs");
+          if (node.type === "stairs" || otherNode.type === "stairs") metrics = this.getTacticalMetrics("stairs");
           if (node.type === "footbridge" || otherNode.type === "footbridge") {
-            speed = this.getAvgSpeed("footbridge");
-            safety = 1.0; // Maximum safety
+            metrics = this.getTacticalMetrics("footbridge");
+            safety = 1.0; 
           }
           if (node.type === "overpass" || otherNode.type === "overpass") {
-            speed = this.getAvgSpeed("overpass");
+            metrics = this.getTacticalMetrics("overpass");
             safety = 1.0;
           }
           if (node.type === "pedestrian_lane" || otherNode.type === "pedestrian_lane") safety = 0.9;
 
-          const baseWeight = dist / speed;
-          // Drastic safety penalty: non-safe routes are heavily discouraged.
-          // Unsafe routes (safety <= 0.5) get a massive time penalty.
-          const safetyPenalty = safety >= 0.9 ? 0 : (1.0 - safety) * 600; // Up to 10 mins penalty for unsafe routes
+          const baseWeight = dist / metrics.speed;
+          // Gentle safety penalty for relying on sidewalks instead of dedicated infrastructure
+          const safetyPenalty = safety >= 0.9 ? 0 : (1.0 - safety) * 120; 
           
           edges.push({
             from: node.id,
             to: otherNode.id,
-            weight: baseWeight + safetyPenalty + 30, // 30s transfer overhead
+            weight: baseWeight + safetyPenalty + 30, 
             distance: dist,
             type: "walk",
-            pedestrianSafety: safety
+            pedestrianSafety: safety,
+            comfort: metrics.comfort,
+            reliability: metrics.reliability
           });
         }
       });
@@ -279,7 +292,9 @@ export class Pathfinder {
     return {
       totalTime: distances[end],
       totalDistance: path.reduce((acc, p) => acc + (p.edge?.distance || 0), 0),
-      path: path
+      path: path,
+      comfort: path.reduce((acc, p) => acc + (p.edge?.comfort || 0.5), 0) / path.length,
+      reliability: path.reduce((acc, p) => acc + (p.edge?.reliability || 0.7), 0) / path.length
     };
   }
 }

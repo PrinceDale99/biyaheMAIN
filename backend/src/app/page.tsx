@@ -20,7 +20,6 @@ type RouteSegment = {
   type: 'walk' | 'transit';
   coordinates: [number, number][];
 };
-
 type RouteOption = {
   id: string;
   type: string;
@@ -31,6 +30,8 @@ type RouteOption = {
   geometry?: any; 
   segments?: RouteSegment[];
   instructions: string[];
+  comfort?: number;
+  reliability?: number;
 };
 
 export type RoutingPreference = 'recommended' | 'fastest' | 'cheapest' | 'walk';
@@ -86,8 +87,31 @@ export default function Home() {
 
   const searchMarker = useRef<mapboxgl.Marker | null>(null);
 
-  const speak = (text: string) => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
+  const speak = async (text: string) => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Try Google TTS API first if online
+    if (navigator.onLine) {
+      try {
+        const response = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+
+        if (response.ok) {
+          const { audioContent } = await response.json();
+          const audio = new Audio(`data:audio/mp3;base64,${audioContent}`);
+          audio.play();
+          return; // Success, exit
+        }
+      } catch (e) {
+        console.warn('[TTS] Google API failed, falling back to browser TTS:', e);
+      }
+    }
+
+    // 2. Fallback to default Web Speech API
+    if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
@@ -673,7 +697,9 @@ export default function Home() {
           duration: `${Math.round(result.totalTime / 60)} mins`,
           distance: `${(result.totalDistance / 1000).toFixed(1)} km`,
           segments: segments,
-          instructions: pathInstructions
+          instructions: pathInstructions,
+          comfort: result.comfort,
+          reliability: result.reliability
         }
       ];
 

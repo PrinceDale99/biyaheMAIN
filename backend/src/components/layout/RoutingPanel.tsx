@@ -175,24 +175,44 @@ export function RoutingPanel({
             <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
               Calculating the best {routingPreference === 'walk' ? 'walking path' : 'multi-modal routes'} for your commute in Metro Manila.
             </p>
-            <TacticalButton
-              variant="primary"
-              fullWidth
-              onClick={calculateRoute}
-              disabled={loading}
-              className="!py-3 md:!py-5 !rounded-2xl md:!rounded-[2rem] shadow-xl md:shadow-2xl shadow-teal-500/20 flex items-center justify-center gap-2 md:gap-3"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Find Best Route
-                </>
-              )}
-            </TacticalButton>
+            <div className="flex gap-2">
+              <TacticalButton
+                variant="primary"
+                fullWidth
+                onClick={calculateRoute}
+                disabled={loading || isAnalyzing}
+                className="!py-3 md:!py-5 !rounded-2xl md:!rounded-[2rem] shadow-xl md:shadow-2xl shadow-teal-500/20 flex items-center justify-center gap-2 md:gap-3"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Find Best Route
+                  </>
+                )}
+              </TacticalButton>
+              
+              <button
+                onClick={analyzeRoute}
+                disabled={loading || isAnalyzing}
+                className="group relative p-3 md:p-5 bg-teal-500/10 border border-teal-500/30 rounded-2xl md:rounded-[2rem] hover:bg-teal-500/20 transition-all active:scale-95 disabled:opacity-50"
+                title="AI Tactical Analysis"
+              >
+                {isAnalyzing ? (
+                  <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <div className="relative">
+                    <div className="absolute -inset-1 bg-teal-500/50 rounded-full blur opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <svg className="w-6 h-6 text-teal-400 relative" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.364-5.636l-.707-.707M6.342 16.126a7.5 7.5 0 1111.316 0l.243.517a.5.5 0 01-.456.702H6.555a.5.5 0 01-.456-.702l.243-.517z" />
+                    </svg>
+                  </div>
+                )}
+              </button>
+            </div>
           </div>
         )}
 
